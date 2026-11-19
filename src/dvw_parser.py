@@ -170,20 +170,29 @@ class DVWParser:
         parts = line.split(';')
         code = parts[0].strip() if parts else ""
 
-        # Colonne posizionali registrate
+        # Colonne posizionali registrate da Data Volley
         col_set = int(parts[8]) if len(parts) > 8 and parts[8].isdigit() else current_set
-        home_score = int(parts[9]) if len(parts) > 9 and parts[9].isdigit() else None
-        away_score = int(parts[10]) if len(parts) > 10 and parts[10].isdigit() else None
+        home_setter_pos = int(parts[9]) if len(parts) > 9 and parts[9].isdigit() else None
+        away_setter_pos = int(parts[10]) if len(parts) > 10 and parts[10].isdigit() else None
+        video_frame = int(parts[12]) if len(parts) > 12 and parts[12].isdigit() else None
 
-        lineup_info = {}
+        home_lineup = None
+        away_lineup = None
         if len(parts) >= 26:
             try:
-                lineup_info = {
-                    "home_pos": [int(p) if p.isdigit() else None for p in parts[14:20]],
-                    "away_pos": [int(p) if p.isdigit() else None for p in parts[20:26]]
-                }
+                h_cands = [int(p) if p.isdigit() else None for p in parts[14:20]]
+                a_cands = [int(p) if p.isdigit() else None for p in parts[20:26]]
+                if any(x is not None for x in h_cands):
+                    home_lineup = h_cands
+                if any(x is not None for x in a_cands):
+                    away_lineup = a_cands
             except Exception:
                 pass
+
+        lineup_info = {
+            "home_pos": home_lineup,
+            "away_pos": away_lineup
+        }
 
         if not code:
             return {
@@ -193,7 +202,13 @@ class DVWParser:
                 "extended_code": "",
                 "is_skill": False,
                 "is_valid": 1,
-                "error_note": None
+                "error_note": None,
+                "home_setter_pos": home_setter_pos,
+                "away_setter_pos": away_setter_pos,
+                "home_lineup": home_lineup,
+                "away_lineup": away_lineup,
+                "video_frame": video_frame,
+                "lineup": lineup_info
             }
 
         # --- A. MARCATORI DI FINE SET (**1set, **2set...) ---
@@ -207,6 +222,11 @@ class DVWParser:
                 "is_system": True,
                 "is_valid": 1,
                 "error_note": None,
+                "home_setter_pos": home_setter_pos,
+                "away_setter_pos": away_setter_pos,
+                "home_lineup": home_lineup,
+                "away_lineup": away_lineup,
+                "video_frame": video_frame,
                 "lineup": lineup_info
             }
 
@@ -221,6 +241,11 @@ class DVWParser:
                 "is_system": True,
                 "is_valid": 1,
                 "error_note": None,
+                "home_setter_pos": home_setter_pos,
+                "away_setter_pos": away_setter_pos,
+                "home_lineup": home_lineup,
+                "away_lineup": away_lineup,
+                "video_frame": video_frame,
                 "lineup": lineup_info
             }
 
@@ -236,6 +261,11 @@ class DVWParser:
                 "is_system": False,
                 "is_valid": 0,
                 "error_note": f"Prefisso squadra non valido: '{team_char}'",
+                "home_setter_pos": home_setter_pos,
+                "away_setter_pos": away_setter_pos,
+                "home_lineup": home_lineup,
+                "away_lineup": away_lineup,
+                "video_frame": video_frame,
                 "lineup": lineup_info
             }
 
@@ -273,18 +303,21 @@ class DVWParser:
                 "is_system": True,
                 "is_valid": 1,
                 "error_note": None,
-                "home_score": home_score,
-                "away_score": away_score,
+                "home_setter_pos": home_setter_pos,
+                "away_setter_pos": away_setter_pos,
+                "home_lineup": home_lineup,
+                "away_lineup": away_lineup,
+                "video_frame": video_frame,
                 "lineup": lineup_info
             }
 
         # --- D. CODICE DI GIOCO ORDINARIO (Skill Event) ---
-        # Formato posizionale: Team(1) + Maglia(2) + Skill(1) + Tipo(1) + Valutazione(1) + Estensione...
-        m = re.match(r"^([*aA])(\d{2})([SRABDEFBsrabdefb])([A-Za-z0-9])([#\+!\-/\=])(.*)$", code)
+        # Formato posizionale: Team(1) + Maglia(1-2) + Skill(1) + Tipo(Opzionale 1) + Valutazione(1) + Estensione...
+        m = re.match(r"^([*aA])(\d{1,2})([SRABDEFBsrabdefb])([A-Za-z0-9 ]?)([#\+!\-/\=])(.*)$", code)
         if m:
             shirt_number = int(m.group(2))
             skill = m.group(3).upper()
-            skill_type = m.group(4)
+            skill_type = m.group(4).strip() if m.group(4) and m.group(4).strip() else None
             evaluation = m.group(5)
             extended = m.group(6)
 
@@ -303,12 +336,21 @@ class DVWParser:
                 remaining = extended
 
             # Zone (partenza, arrivo) e sottozona (A, B, C, D)
+            # 1. Due cifre consecutive: es. 58B
             zone_match = re.search(r"([1-9])([1-9])([ABCDabcd])?", remaining)
+            # 2. Due cifre separate da segnaposti tilde: es. ~~~~4~~2
+            zone_sep_match = re.search(r"([1-9])~+([1-9])([ABCDabcd])?", remaining)
+
             if zone_match:
                 start_zone = int(zone_match.group(1))
                 end_zone = int(zone_match.group(2))
                 if zone_match.group(3):
                     end_subzone = zone_match.group(3).upper()
+            elif zone_sep_match:
+                start_zone = int(zone_sep_match.group(1))
+                end_zone = int(zone_sep_match.group(2))
+                if zone_sep_match.group(3):
+                    end_subzone = zone_sep_match.group(3).upper()
             else:
                 single_zone = re.search(r"([1-9])([ABCDabcd])?", remaining)
                 if single_zone:
@@ -334,8 +376,11 @@ class DVWParser:
                 "is_system": False,
                 "is_valid": 1,
                 "error_note": None,
-                "home_score": home_score,
-                "away_score": away_score,
+                "home_setter_pos": home_setter_pos,
+                "away_setter_pos": away_setter_pos,
+                "home_lineup": home_lineup,
+                "away_lineup": away_lineup,
+                "video_frame": video_frame,
                 "lineup": lineup_info
             }
         else:
@@ -358,8 +403,11 @@ class DVWParser:
                 "is_system": False,
                 "is_valid": 0,
                 "error_note": f"Sintassi codice scout non riconosciuta: '{code}'",
-                "home_score": home_score,
-                "away_score": away_score,
+                "home_setter_pos": home_setter_pos,
+                "away_setter_pos": away_setter_pos,
+                "home_lineup": home_lineup,
+                "away_lineup": away_lineup,
+                "video_frame": video_frame,
                 "lineup": lineup_info
             }
 
