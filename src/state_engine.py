@@ -156,14 +156,31 @@ class MatchStateEngine:
                 continue
 
             # Sincronizzazione formazioni native e rotazioni registrate
+            lineup_changed = False
             if hp1 is not None and hp2 is not None and hp3 is not None and hp4 is not None and hp5 is not None and hp6 is not None:
-                home_pos = [hp1, hp2, hp3, hp4, hp5, hp6]
+                new_h = [hp1, hp2, hp3, hp4, hp5, hp6]
+                if new_h != home_pos:
+                    home_pos = new_h
+                    lineup_changed = True
+
             if ap1 is not None and ap2 is not None and ap3 is not None and ap4 is not None and ap5 is not None and ap6 is not None:
-                away_pos = [ap1, ap2, ap3, ap4, ap5, ap6]
+                new_a = [ap1, ap2, ap3, ap4, ap5, ap6]
+                if new_a != away_pos:
+                    away_pos = new_a
+                    lineup_changed = True
+
             if h_setter_p is not None:
                 home_setter_pos = h_setter_p
             if a_setter_p is not None:
                 away_setter_pos = a_setter_p
+
+            if (lineup_changed or current_rotation_id is None) and (any(x is not None for x in home_pos) or any(x is not None for x in away_pos)):
+                current_rotation_id = self._save_rotation(
+                    cursor, set_id, ev_id, current_serving_team,
+                    home_setter_pos, away_setter_pos, home_pos, away_pos,
+                    home_libero, away_libero, is_subst=False
+                )
+                rotations_created += 1
 
             # --- A. MARCATORI DI FINE SET (**1set, **2set) ---
             if code.startswith("**") and "SET" in code.upper():
