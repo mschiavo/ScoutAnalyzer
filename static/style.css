@@ -500,6 +500,39 @@ select:focus, input[type="text"]:focus {
 .team-chip.home { background: rgba(56, 189, 248, 0.25); color: var(--home-color); }
 .team-chip.away { background: rgba(244, 63, 94, 0.25); color: var(--away-color); }
 
+.badge-subst {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  font-weight: 700;
+  font-size: 0.8rem;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.badge-setter-code {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  font-weight: 700;
+  font-size: 0.8rem;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+.badge-rot-code {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  font-weight: 700;
+  font-size: 0.8rem;
+  border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
 .error-tag {
   color: #f87171;
   font-size: 0.75rem;

@@ -175,7 +175,13 @@
           <button class="btn-close" id="btn-close-audit-modal">&times;</button>
         </div>
         <div class="modal-body">
-          <p>Inserisci il percorso assoluto del file scout <code>.dvw</code> da verificare e importare:</p>
+          <div class="upload-box" style="background: rgba(59, 130, 246, 0.08); border: 2px dashed var(--border-color); border-radius: 8px; padding: 16px; text-align: center; margin-bottom: 14px;">
+            <span style="font-size: 1.8rem;">📁</span>
+            <p style="margin: 6px 0 10px; font-size: 0.9rem;"><strong>Seleziona un file .dvw dal tuo computer:</strong></p>
+            <input type="file" id="audit-file-input" accept=".dvw" />
+          </div>
+          <div style="text-align: center; margin: 8px 0; color: var(--text-muted); font-size: 0.75rem; font-weight: 700;">OPPURE TRAMITE PERCORSO FILE</div>
+          <p style="font-size: 0.85rem; margin-top: 6px;">Inserisci il percorso assoluto sul filesystem:</p>
           <div class="input-group">
             <input type="text" id="audit-file-path" placeholder="D:\Volley\B1FB\giornata_01\&01_COR-VOL_Vicenza_b1fb_26_s.dvw" />
           </div>

@@ -134,8 +134,8 @@ class DVWParser:
     def _parse_players(self):
         self.players_home = []
         self.players_visiting = []
-        home_keys = [k for k in self.sections.keys() if "PLAYER" in k and ("H" in k or "HOME" in k)]
-        vis_keys = [k for k in self.sections.keys() if "PLAYER" in k and ("V" in k or "VISIT" in k or "A" in k)]
+        home_keys = [k for k in self.sections.keys() if "PLAYER" in k and ("-H" in k or "HOME" in k or k.endswith("H"))]
+        vis_keys = [k for k in self.sections.keys() if "PLAYER" in k and ("-V" in k or "VISIT" in k or "-A" in k or k.endswith("V") or k.endswith("A"))]
 
         if home_keys:
             for line in self.sections.get(home_keys[0], []):
@@ -144,11 +144,15 @@ class DVWParser:
                     shirt_num = parts[1].strip() if len(parts) > 1 else ""
                     name = f"{parts[9].strip()} {parts[10].strip()}".strip() if len(parts) > 10 else parts[9].strip()
                     code = parts[8].strip() if len(parts) > 8 and parts[8].strip() else f"H_{shirt_num}"
+                    is_libero = (len(parts) > 12 and parts[12].strip().upper() == "L") or (len(parts) > 13 and parts[13].strip() == "1")
+                    role_code = parts[13].strip() if len(parts) > 13 and parts[13].strip() else ("1" if is_libero else None)
                     if shirt_num:
                         self.players_home.append({
                             "number": shirt_num,
                             "name": name,
-                            "code": code
+                            "code": code,
+                            "is_libero": is_libero,
+                            "role_code": role_code
                         })
 
         if vis_keys:
@@ -158,11 +162,15 @@ class DVWParser:
                     shirt_num = parts[1].strip() if len(parts) > 1 else ""
                     name = f"{parts[9].strip()} {parts[10].strip()}".strip() if len(parts) > 10 else parts[9].strip()
                     code = parts[8].strip() if len(parts) > 8 and parts[8].strip() else f"V_{shirt_num}"
+                    is_libero = (len(parts) > 12 and parts[12].strip().upper() == "L") or (len(parts) > 13 and parts[13].strip() == "1")
+                    role_code = parts[13].strip() if len(parts) > 13 and parts[13].strip() else ("1" if is_libero else None)
                     if shirt_num:
                         self.players_visiting.append({
                             "number": shirt_num,
                             "name": name,
-                            "code": code
+                            "code": code,
+                            "is_libero": is_libero,
+                            "role_code": role_code
                         })
 
     def _parse_scout_line(self, line: str, event_index: int, current_set: int) -> Dict[str, Any]:

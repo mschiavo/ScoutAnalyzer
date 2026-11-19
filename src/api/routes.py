@@ -2,7 +2,7 @@ import os
 import json
 import sqlite3
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, Query, Body
+from fastapi import APIRouter, HTTPException, Query, Body, File, UploadFile
 from pydantic import BaseModel
 
 from src.dvw_parser import DVWParser
@@ -155,10 +155,32 @@ def get_match_events(
 
     c.execute(query, params)
     events = []
+    last_home_lineup = [None] * 6
+    last_away_lineup = [None] * 6
+    last_home_setter_pos = None
+    last_away_setter_pos = None
+
     for r in c.fetchall():
         d = dict(r)
-        d["home_lineup"] = [d.pop(f"home_pos{i}") for i in range(1, 7)]
-        d["away_lineup"] = [d.pop(f"away_pos{i}") for i in range(1, 7)]
+        h_lineup = [d.pop(f"home_pos{i}") for i in range(1, 7)]
+        a_lineup = [d.pop(f"away_pos{i}") for i in range(1, 7)]
+
+        if any(x is not None for x in h_lineup):
+            last_home_lineup = h_lineup
+        if any(x is not None for x in a_lineup):
+            last_away_lineup = a_lineup
+        if d.get("home_setter_pos") is not None:
+            last_home_setter_pos = d["home_setter_pos"]
+        if d.get("away_setter_pos") is not None:
+            last_away_setter_pos = d["away_setter_pos"]
+
+        d["home_lineup"] = list(last_home_lineup)
+        d["away_lineup"] = list(last_away_lineup)
+        if d.get("home_setter_pos") is None and last_home_setter_pos is not None:
+            d["home_setter_pos"] = last_home_setter_pos
+        if d.get("away_setter_pos") is None and last_away_setter_pos is not None:
+            d["away_setter_pos"] = last_away_setter_pos
+
         events.append(d)
 
     conn.close()
@@ -177,6 +199,48 @@ def get_match_logs(match_id: int):
     rows = [dict(r) for r in c.fetchall()]
     conn.close()
     return rows
+
+@router.post("/audit/upload")
+async def audit_upload(file: UploadFile = File(...)):
+    import tempfile
+    suffix = os.path.splitext(file.filename)[1] or ".dvw"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        parser = DVWParser(tmp_path)
+        parsed = parser.parse()
+        if not parsed.get("match_info", {}).get("match_code") or parsed["match_info"]["match_code"] == "UNKNOWN_MATCH":
+            parsed["match_info"]["match_code"] = os.path.splitext(file.filename)[0]
+
+        ingester = IngestionManager()
+        ingest_res = ingester.ingest_dvw(parsed)
+        match_id = ingest_res["match_id"]
+
+        engine = MatchStateEngine(match_id=match_id)
+        state_res = engine.process_match()
+
+        return {
+            "status": "SUCCESS",
+            "match_id": match_id,
+            "match_code": ingest_res["match_code"],
+            "events_count": ingest_res["events_count"],
+            "sets_count": ingest_res["sets_count"],
+            "syntax_issues_count": ingest_res["syntax_issues_count"],
+            "state_issues_count": state_res["issues_found"],
+            "rotations_created": state_res["rotations_created"],
+            "actions_created": state_res["actions_created"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore durante l'audit del file caricato: {str(e)}")
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
 
 @router.post("/audit/file")
 def audit_file(payload: AuditFileRequest):

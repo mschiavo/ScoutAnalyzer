@@ -212,9 +212,15 @@ class IngestionManager:
             last_name = parts[0] if parts else f"Player_{shirt}"
             first_name = " ".join(parts[1:]) if len(parts) > 1 else ""
 
+            is_libero = p.get("is_libero", False)
             role_code = str(p.get("role_code", "")).strip()
             role_id = None
-            if role_code:
+            if is_libero or role_code in ("1", "L"):
+                cursor.execute("SELECT id FROM roles WHERE dv_role_code = '1' OR code = 'L'")
+                r_row = cursor.fetchone()
+                if r_row:
+                    role_id = r_row[0]
+            elif role_code:
                 cursor.execute("SELECT id FROM roles WHERE dv_role_code = ? OR code = ?", (role_code, role_code))
                 r_row = cursor.fetchone()
                 if r_row:
@@ -233,9 +239,16 @@ class IngestionManager:
             player_id = cursor.fetchone()[0]
             players_map[shirt] = player_id
 
-            cursor.execute("""
-                INSERT OR IGNORE INTO team_players (team_id, player_id, shirt_number)
-                VALUES (?, ?, ?)
-            """, (team_id, player_id, int(shirt) if shirt.isdigit() else 0))
+            cursor.execute("SELECT id FROM team_players WHERE team_id = ? AND player_id = ?", (team_id, player_id))
+            tp_row = cursor.fetchone()
+            if tp_row:
+                cursor.execute("""
+                    UPDATE team_players SET shirt_number = ?, valid_to = NULL WHERE id = ?
+                """, (int(shirt) if shirt.isdigit() else 0, tp_row[0]))
+            else:
+                cursor.execute("""
+                    INSERT INTO team_players (team_id, player_id, shirt_number)
+                    VALUES (?, ?, ?)
+                """, (team_id, player_id, int(shirt) if shirt.isdigit() else 0))
 
         return players_map

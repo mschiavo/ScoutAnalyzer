@@ -48,14 +48,16 @@ class MatchStateEngine:
             self.home_team_id = m_team_row[0] if m_team_row else None
             self.away_team_id = m_team_row[1] if m_team_row else None
 
-            # Caricamento ID atlete e maglie designate con ruolo Libero
+            # Caricamento ID atlete e maglie designate con ruolo Libero per questa gara
             cursor.execute("""
-                SELECT p.id, tp.team_id, tp.shirt_number
-                FROM players p
-                LEFT JOIN team_players tp ON tp.player_id = p.id
+                SELECT DISTINCT p.id, tp.team_id, tp.shirt_number
+                FROM matches m
+                JOIN team_players tp ON tp.team_id = m.home_team_id OR tp.team_id = m.away_team_id
+                JOIN players p ON tp.player_id = p.id
                 JOIN roles r ON p.role_id = r.id
-                WHERE r.code = 'L' OR r.dv_role_code = '1'
-            """)
+                WHERE m.id = ? AND (r.code = 'L' OR r.dv_role_code = '1')
+                  AND (tp.valid_to IS NULL OR (m.scheduled_date IS NOT NULL AND tp.valid_to >= m.scheduled_date))
+            """, (self.match_id,))
             self.libero_player_ids = set()
             self.libero_shirt_numbers = set()
             for row in cursor.fetchall():
@@ -223,12 +225,16 @@ class MatchStateEngine:
                 new_p = int(code[2:])
                 if t_char == '*':
                     home_setter_num = new_p
+                    if home_setter_num in home_pos:
+                        home_setter_pos = home_pos.index(home_setter_num) + 1
                 else:
                     away_setter_num = new_p
+                    if away_setter_num in away_pos:
+                        away_setter_pos = away_pos.index(away_setter_num) + 1
                 continue
 
             # --- F. SOSTITUZIONI (*c[OUT]:[IN] o ac[OUT]:[IN]) ---
-            if len(code) >= 7 and code[1] in ('c', 'C') and ':' in code:
+            if len(code) >= 3 and code[1] in ('c', 'C') and ':' in code:
                 t_char = code[0]
                 if t_char == '*':
                     home_substitutions_count += 1
@@ -242,19 +248,26 @@ class MatchStateEngine:
                         self._log_issue(cursor, ev_idx, code, err_msg, ev_id)
 
                 try:
-                    p_out = int(code[2:4])
-                    p_in = int(code[5:7])
-                    target_pos = home_pos if t_char == '*' else away_pos
-                    if p_out in target_pos:
-                        idx = target_pos.index(p_out)
-                        target_pos[idx] = p_in
+                    parts_sub = code[2:].split(':')
+                    p_out = int(parts_sub[0]) if parts_sub[0].strip().isdigit() else None
+                    p_in = int(parts_sub[1]) if len(parts_sub) > 1 and parts_sub[1].strip().isdigit() else None
+                    if p_out is not None and p_in is not None:
+                        target_pos = home_pos if t_char == '*' else away_pos
+                        if p_out in target_pos:
+                            idx = target_pos.index(p_out)
+                            target_pos[idx] = p_in
 
-                        current_rotation_id = self._save_rotation(
-                            cursor, set_id, ev_id, current_serving_team,
-                            home_setter_pos, away_setter_pos, home_pos, away_pos,
-                            home_libero, away_libero, is_subst=True
-                        )
-                        rotations_created += 1
+                            if t_char == '*' and p_out == home_setter_num:
+                                home_setter_num = None
+                            elif t_char == 'a' and p_out == away_setter_num:
+                                away_setter_num = None
+
+                            current_rotation_id = self._save_rotation(
+                                cursor, set_id, ev_id, current_serving_team,
+                                home_setter_pos, away_setter_pos, home_pos, away_pos,
+                                home_libero, away_libero, is_subst=True
+                            )
+                            rotations_created += 1
                 except Exception:
                     pass
                 continue
@@ -265,22 +278,10 @@ class MatchStateEngine:
                 new_rot = int(code[2])
 
                 if t_char == '*':
-                    if new_rot != home_setter_pos:
-                        # Ricalcolo nominale: se il palleggiatore è già in new_rot, aggiorniamo solo l'indice nominale
-                        if home_setter_num in home_pos and (home_pos.index(home_setter_num) + 1) == new_rot:
-                            home_setter_pos = new_rot
-                        else:
-                            self._rotate_clockwise(home_pos)
-                            home_setter_pos = new_rot
+                    home_setter_pos = new_rot
                     current_serving_team = '*'
                 else:
-                    if new_rot != away_setter_pos:
-                        # Ricalcolo nominale per Ospite: se il palleggiatore è già in new_rot
-                        if away_setter_num in away_pos and (away_pos.index(away_setter_num) + 1) == new_rot:
-                            away_setter_pos = new_rot
-                        else:
-                            self._rotate_clockwise(away_pos)
-                            away_setter_pos = new_rot
+                    away_setter_pos = new_rot
                     current_serving_team = 'a'
 
                 current_rotation_id = self._save_rotation(
@@ -304,6 +305,7 @@ class MatchStateEngine:
                     err_msg = (f"Azione prosegue illegalmente dopo colpo terminale: rilevato tocco '{code}' "
                                f"dopo {terminal_event['code']} (riga {terminal_event['line']})")
                     self._log_issue(cursor, ev_idx, code, err_msg, ev_id)
+                    terminal_event = None
 
             # --- I. VALIDAZIONE DEL SERVIZIO (Skill 'S') ---
             if skill == 'S':
@@ -313,12 +315,11 @@ class MatchStateEngine:
 
                 # Controllo divieto di battuta per il Libero
                 is_libero = False
-                if player_id is not None and player_id in self.libero_player_ids:
-                    is_libero = True
+                if player_id is not None:
+                    is_libero = (player_id in self.libero_player_ids)
                 elif shirt_number is not None:
                     t_id = self.home_team_id if team_code == '*' else self.away_team_id
-                    if (t_id, shirt_number) in self.libero_shirt_numbers:
-                        is_libero = True
+                    is_libero = ((t_id, shirt_number) in self.libero_shirt_numbers)
 
                 if is_libero:
                     err_msg = f"Fallo del Libero: atleta #{shirt_number} designata come Libero non può effettuare il servizio"
@@ -453,7 +454,8 @@ class MatchStateEngine:
                         for event_in_rally_id in current_action_events:
                             cursor.execute("UPDATE events SET action_id = ? WHERE id = ?", (action_id, event_in_rally_id))
                         current_action_events = []
-                        terminal_event = None
+
+                    terminal_event = None
                 except Exception:
                     pass
 

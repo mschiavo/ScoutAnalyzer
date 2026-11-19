@@ -38,6 +38,7 @@ const btnCloseAuditModal = document.getElementById("btn-close-audit-modal");
 const btnCancelAudit = document.getElementById("btn-cancel-audit");
 const btnRunAudit = document.getElementById("btn-run-audit");
 const auditFilePathInput = document.getElementById("audit-file-path");
+const auditFileInput = document.getElementById("audit-file-input");
 const auditStatus = document.getElementById("audit-status");
 const btnSyncRosters = document.getElementById("btn-sync-rosters");
 
@@ -73,6 +74,7 @@ function setupEventListeners() {
   btnOpenAuditModal.addEventListener("click", () => {
     auditModal.classList.add("open");
     auditStatus.innerHTML = "";
+    if (auditFileInput) auditFileInput.value = "";
   });
   btnCloseAuditModal.addEventListener("click", () => auditModal.classList.remove("open"));
   btnCancelAudit.addEventListener("click", () => auditModal.classList.remove("open"));
@@ -87,6 +89,15 @@ function setupEventListeners() {
 
   // Run Audit
   btnRunAudit.addEventListener("click", runAuditFile);
+
+  // File Upload listener
+  if (auditFileInput) {
+    auditFileInput.addEventListener("change", (e) => {
+      if (e.target.files && e.target.files[0]) {
+        uploadAndAuditFile(e.target.files[0]);
+      }
+    });
+  }
 
   // Sync Rosters
   btnSyncRosters.addEventListener("click", syncRosters);
@@ -123,6 +134,7 @@ function populateMatchSelect() {
 
 async function selectMatch(matchId) {
   state.currentMatchId = matchId;
+  matchSelect.value = matchId;
   try {
     const [detailRes, eventsRes, logsRes] = await Promise.all([
       fetch(`/api/matches/${matchId}`),
@@ -181,7 +193,7 @@ function updateMatchSummary() {
   const totalIssues = state.logs.length;
   kpiIssues.textContent = `Anomalie: ${totalIssues}`;
 
-  // Conta rotazioni distinte
+  // Conta formazioni distinte
   let distinctRotations = new Set();
   state.events.forEach(e => {
     if (e.home_lineup && e.home_lineup.some(x => x !== null)) {
@@ -245,6 +257,18 @@ function renderEventsTable() {
     // Rotations Info
     const rotInfo = `P${ev.home_setter_pos || "?"} vs P${ev.away_setter_pos || "?"}`;
 
+    // Codice ed eventi speciali (Sostituzione, Cambio Palleggio, Rotazione)
+    let codeDisplay = `<code>${escapeHtml(ev.extended_code)}</code>`;
+    const rawCode = ev.extended_code || "";
+    if (rawCode.length >= 3 && (rawCode.startsWith("*c") || rawCode.startsWith("ac")) && rawCode.includes(":")) {
+      const subParts = rawCode.substring(2).split(":");
+      codeDisplay = `<span class="badge-subst">🔄 Cambio: #${subParts[0]} ➔ #${subParts[1]}</span>`;
+    } else if (rawCode.length >= 3 && (rawCode.startsWith("*P") || rawCode.startsWith("aP")) && !rawCode.includes(">")) {
+      codeDisplay = `<span class="badge-setter-code">🎯 Palleggio: #${rawCode.substring(2)}</span>`;
+    } else if (rawCode.length >= 3 && (rawCode.startsWith("*z") || rawCode.startsWith("az")) && !rawCode.includes(">")) {
+      codeDisplay = `<span class="badge-rot-code">⚡ Rotazione: P${rawCode.substring(2)}</span>`;
+    }
+
     // Note / Error
     let noteHtml = '<span style="color:#64748b;">OK</span>';
     if (ev.error_note) {
@@ -258,7 +282,7 @@ function renderEventsTable() {
       <td><strong>${ev.shirt_number !== null ? ev.shirt_number : "-"}</strong></td>
       <td>${ev.skill || "-"}</td>
       <td>${evalBadge}</td>
-      <td><code>${escapeHtml(ev.extended_code)}</code></td>
+      <td>${codeDisplay}</td>
       <td>${zoneInfo}</td>
       <td><small>${rotInfo}</small></td>
       <td>${noteHtml}</td>
@@ -277,6 +301,12 @@ function renderEventsTable() {
 
 function showEventOnCourt(ev, idx) {
   if (!ev) return;
+
+  const hName = (state.currentMatchDetail && state.currentMatchDetail.match) ? state.currentMatchDetail.match.home_name : "CASA";
+  const aName = (state.currentMatchDetail && state.currentMatchDetail.match) ? state.currentMatchDetail.match.away_name : "OSPITE";
+
+  courtHomeTitle.textContent = `${hName} (*) - P${ev.home_setter_pos || "?"}`;
+  courtAwayTitle.textContent = `${aName} (a) - P${ev.away_setter_pos || "?"}`;
 
   activeEventCaption.textContent = `Azione #${ev.event_index} (Set ${ev.set_number}) - ${ev.extended_code || ""} | Casa P${ev.home_setter_pos || "?"} vs Ospite P${ev.away_setter_pos || "?"}`;
 
@@ -323,17 +353,71 @@ function updateZoneNode(nodeId, shirtNum, zoneNum, teamCode, ev) {
   if (isPlayerLibero(shirtNum, teamCode)) {
     g.classList.add("is-libero");
   }
+
+  // Tooltip con anagrafica
+  const p = getPlayerInfo(shirtNum, teamCode);
+  if (p) {
+    g.setAttribute("title", `#${shirtNum} ${p.first_name || ""} ${p.last_name || ""} (${p.role_name || ""})`);
+  } else {
+    g.removeAttribute("title");
+  }
+}
+
+function getPlayerInfo(shirtNum, teamCode) {
+  if (!state.currentMatchDetail || shirtNum === null) return null;
+  const roster = teamCode === "*" ? state.currentMatchDetail.players_home : state.currentMatchDetail.players_visiting;
+  if (!roster) return null;
+  return roster.find(x => x.shirt_number === shirtNum) || null;
 }
 
 function isPlayerLibero(shirtNum, teamCode) {
-  if (!state.currentMatchDetail || shirtNum === null) return false;
-  const roster = teamCode === "*" ? state.currentMatchDetail.players_home : state.currentMatchDetail.players_visiting;
-  if (!roster) return false;
-  const p = roster.find(x => x.shirt_number === shirtNum);
+  const p = getPlayerInfo(shirtNum, teamCode);
   return p && (p.role_code === "L" || p.role_name === "Libero");
 }
 
 // --- AUDIT MODAL ACTIONS ---
+async function uploadAndAuditFile(file) {
+  if (!file) return;
+
+  auditStatus.innerHTML = `<span style="color:#38bdf8;">⏳ Caricamento e audit di <b>${escapeHtml(file.name)}</b> in corso...</span>`;
+  btnRunAudit.disabled = true;
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch("/api/audit/upload", {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || "Errore durante il caricamento");
+    }
+
+    auditStatus.innerHTML = `
+      <div style="color:#10b981; font-weight:bold;">✅ Audit completato con successo!</div>
+      <div style="margin-top:6px; color:#cbd5e1;">
+        Partita: <b>${data.match_code}</b> | Eventi: ${data.events_count} | Set: ${data.sets_count}<br>
+        Violazioni sintattiche: ${data.syntax_issues_count} | Anomalie State Engine: ${data.state_issues_count}
+      </div>
+    `;
+
+    await loadMatches();
+    selectMatch(data.match_id);
+
+    setTimeout(() => {
+      auditModal.classList.remove("open");
+      btnRunAudit.disabled = false;
+    }, 1800);
+
+  } catch (err) {
+    auditStatus.innerHTML = `<span style="color:#ef4444;">❌ ${err.message}</span>`;
+    btnRunAudit.disabled = false;
+  }
+}
+
 async function runAuditFile() {
   const path = auditFilePathInput.value.trim();
   if (!path) {
