@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ScoutAnalyzer - Volleyball Scout & Lineup Auditor</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏐</text></svg>">
+</head>
+<body>
+  <div class="app-container">
+    <!-- TOP HEADER -->
+    <header class="app-header">
+      <div class="brand">
+        <span class="logo">🏐</span>
+        <div>
+          <h1>ScoutAnalyzer</h1>
+          <span class="subtitle">Volleyball DVW & Lineup Engine (Serie B1F)</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="select-wrapper">
+          <label for="match-select">Partita:</label>
+          <select id="match-select">
+            <option value="">Caricamento partite...</option>
+          </select>
+        </div>
+        <button id="btn-open-audit-modal" class="btn btn-primary">➕ Nuovo Audit .DVW</button>
+        <button id="btn-sync-rosters" class="btn btn-secondary">🔄 Sincronizza Roster</button>
+      </div>
+    </header>
+
+    <!-- MATCH SUMMARY BAR -->
+    <section class="match-summary-bar" id="match-summary-bar">
+      <div class="team-block home-team">
+        <span class="team-badge">CASA (*)</span>
+        <h2 id="home-team-name">--</h2>
+        <span class="team-code" id="home-team-code">---</span>
+      </div>
+
+      <div class="sets-display" id="sets-display">
+        <!-- Parziali dei set inseriti dinamicamente -->
+        <span class="no-match-msg">Seleziona una partita per visualizzare i dettagli</span>
+      </div>
+
+      <div class="team-block away-team">
+        <span class="team-badge">OSPITE (a)</span>
+        <h2 id="away-team-name">--</h2>
+        <span class="team-code" id="away-team-code">---</span>
+      </div>
+    </section>
+
+    <!-- KPI BADGES & FILTER BAR -->
+    <div class="filter-toolbar">
+      <div class="kpi-group" id="kpi-group">
+        <span class="kpi-badge kpi-total" id="kpi-events">Eventi: 0</span>
+        <span class="kpi-badge kpi-rotations" id="kpi-rotations">Rotazioni: 0</span>
+        <span class="kpi-badge kpi-issues" id="kpi-issues">Anomalie: 0</span>
+      </div>
+
+      <div class="filters-group">
+        <div class="tabs-set" id="set-tabs">
+          <button class="tab active" data-set="all">Tutti i Set</button>
+          <button class="tab" data-set="1">Set 1</button>
+          <button class="tab" data-set="2">Set 2</button>
+          <button class="tab" data-set="3">Set 3</button>
+          <button class="tab" data-set="4">Set 4</button>
+          <button class="tab" data-set="5">Set 5</button>
+        </div>
+
+        <div class="toggles">
+          <label class="toggle-label">
+            <input type="checkbox" id="filter-errors-only">
+            <span>Mostra solo anomalie</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN DASHBOARD CONTENT: COURT + PLAY-BY-PLAY -->
+    <main class="dashboard-grid">
+      <!-- VOLLEYBALL COURT VISUALIZER -->
+      <section class="court-panel">
+        <div class="panel-header">
+          <h3>Formazione in Campo (Rotazione Dinamica)</h3>
+          <span class="active-event-caption" id="active-event-caption">Seleziona un'azione per sincronizzare il campo</span>
+        </div>
+
+        <div class="court-container" id="court-container">
+          <!-- Campo SVG interattivo -->
+          <svg class="court-svg" id="court-svg" viewBox="0 0 900 460" preserveAspectRatio="xMidYMid meet">
+            <!-- Sfondo del campo -->
+            <rect x="20" y="20" width="860" height="420" rx="12" class="court-boundary" />
+            <rect x="30" y="30" width="840" height="400" class="court-floor" />
+            
+            <!-- Rete centrale -->
+            <line x1="450" y1="20" x2="450" y2="440" class="court-net" />
+            <text x="450" y="16" class="net-label" text-anchor="middle">RETE</text>
+
+            <!-- Linee di attacco (3 metri) -->
+            <line x1="310" y1="30" x2="310" y2="430" class="court-line-3m" />
+            <line x1="590" y1="30" x2="590" y2="430" class="court-line-3m" />
+
+            <!-- Nomi squadre a bordo campo -->
+            <text x="170" y="55" class="court-team-title" id="court-home-title">CASA (*)</text>
+            <text x="730" y="55" class="court-team-title" id="court-away-title">OSPITE (a)</text>
+
+            <!-- ZONA CASA (Metà Sinistra) -->
+            <!-- Prima Linea: Z4, Z3, Z2 -->
+            <g id="h-zone-4" class="player-node" transform="translate(360, 100)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z4</text></g>
+            <g id="h-zone-3" class="player-node" transform="translate(360, 230)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z3</text></g>
+            <g id="h-zone-2" class="player-node" transform="translate(360, 360)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z2</text></g>
+            <!-- Seconda Linea: Z5, Z6, Z1 -->
+            <g id="h-zone-5" class="player-node" transform="translate(140, 100)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z5</text></g>
+            <g id="h-zone-6" class="player-node" transform="translate(140, 230)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z6</text></g>
+            <g id="h-zone-1" class="player-node" transform="translate(140, 360)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z1 (Battuta)</text></g>
+
+            <!-- ZONA OSPITE (Metà Destra) -->
+            <!-- Prima Linea: Z2, Z3, Z4 -->
+            <g id="a-zone-2" class="player-node" transform="translate(540, 100)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z2</text></g>
+            <g id="a-zone-3" class="player-node" transform="translate(540, 230)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z3</text></g>
+            <g id="a-zone-4" class="player-node" transform="translate(540, 360)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z4</text></g>
+            <!-- Seconda Linea: Z1, Z6, Z5 -->
+            <g id="a-zone-1" class="player-node" transform="translate(760, 100)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z1 (Battuta)</text></g>
+            <g id="a-zone-6" class="player-node" transform="translate(760, 230)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z6</text></g>
+            <g id="a-zone-5" class="player-node" transform="translate(760, 360)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z5</text></g>
+          </svg>
+        </div>
+
+        <div class="court-legend">
+          <span class="legend-item"><span class="badge-legend badge-setter">P</span> Palleggiatore</span>
+          <span class="legend-item"><span class="badge-legend badge-server">⚡</span> Battitore in Z1</span>
+          <span class="legend-item"><span class="badge-legend badge-libero">L</span> Libero</span>
+        </div>
+      </section>
+
+      <!-- PLAY-BY-PLAY TABLE -->
+      <section class="events-panel">
+        <div class="panel-header">
+          <h3>Cronologia Eventi & Audit</h3>
+          <span id="events-count-label">0 azioni visualizzate</span>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="events-table" id="events-table">
+            <thead>
+              <tr>
+                <th width="45">#</th>
+                <th width="40">Set</th>
+                <th width="55">Team</th>
+                <th width="50">Maglia</th>
+                <th width="50">Fond.</th>
+                <th width="55">Valut.</th>
+                <th>Codice Scout</th>
+                <th width="110">Zone</th>
+                <th width="140">Rotazioni (P/Z)</th>
+                <th>Stato & Anomalie</th>
+              </tr>
+            </thead>
+            <tbody id="events-tbody">
+              <tr>
+                <td colspan="10" class="empty-state">Nessun evento disponibile. Seleziona una partita.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- MODAL AUDIT FILE -->
+    <div class="modal-backdrop" id="audit-modal">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Nuovo Audit Completo File Scout (.DVW)</h3>
+          <button class="btn-close" id="btn-close-audit-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>Inserisci il percorso assoluto del file scout <code>.dvw</code> da verificare e importare:</p>
+          <div class="input-group">
+            <input type="text" id="audit-file-path" placeholder="D:\Volley\B1FB\giornata_01\&01_COR-VOL_Vicenza_b1fb_26_s.dvw" />
+          </div>
+          <div class="preset-links">
+            <span>Esempi rapidi:</span>
+            <a href="#" class="preset-file" data-path="D:\Volley\B1FB\giornata_01\&01_COR-VOL_Vicenza_b1fb_26_s.dvw">Vicenza G01</a>
+            <a href="#" class="preset-file" data-path="D:\Volley\B1FB\esempi\&And01_aduna padova-arena verona_sync_marco.dvw">Aduna vs Verona</a>
+            <a href="#" class="preset-file" data-path="D:\Volley\B1FB\esempi\&And04_aduna padova-peschiera_sync_marco.dvw">Aduna vs Peschiera</a>
+          </div>
+          <div class="audit-status" id="audit-status"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="btn-cancel-audit">Annulla</button>
+          <button class="btn btn-primary" id="btn-run-audit">Avvia Audit & Sincronizzazione</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
