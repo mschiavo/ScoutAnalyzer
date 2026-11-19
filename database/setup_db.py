@@ -206,6 +206,18 @@ def create_database(db_path: str = DB_PATH):
         if col_name not in existing_cols:
             cursor.execute(f"ALTER TABLE events ADD COLUMN {col_name} {col_type}")
 
+    # Inserimento ruoli standard pallavolo se non presenti
+    standard_roles = [
+        ("L", "Libero", "1"),
+        ("S", "Schiacciatore", "2"),
+        ("O", "Opposto", "3"),
+        ("C", "Centrale", "4"),
+        ("P", "Palleggiatore", "5")
+    ]
+    cursor.executemany("""
+        INSERT OR IGNORE INTO roles (code, name, dv_role_code) VALUES (?, ?, ?)
+    """, standard_roles)
+
     conn.commit()
     conn.close()
     print(f"Database SQLite '{db_path}' inizializzato con successo con lo schema DDL unificato (12 tabelle).")

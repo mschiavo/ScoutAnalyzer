@@ -43,9 +43,33 @@ class MatchStateEngine:
             # Rimuoviamo solo i log semantici precedenti lasciando intatti i log sintattici generati dal parser
             cursor.execute("DELETE FROM validation_logs WHERE match_id = ? AND parsed_status != 'SINTASSI'", (self.match_id,))
 
+            cursor.execute("SELECT home_team_id, away_team_id FROM matches WHERE id = ?", (self.match_id,))
+            m_team_row = cursor.fetchone()
+            self.home_team_id = m_team_row[0] if m_team_row else None
+            self.away_team_id = m_team_row[1] if m_team_row else None
+
+            # Caricamento ID atlete e maglie designate con ruolo Libero
+            cursor.execute("""
+                SELECT p.id, tp.team_id, tp.shirt_number
+                FROM players p
+                LEFT JOIN team_players tp ON tp.player_id = p.id
+                JOIN roles r ON p.role_id = r.id
+                WHERE r.code = 'L' OR r.dv_role_code = '1'
+            """)
+            self.libero_player_ids = set()
+            self.libero_shirt_numbers = set()
+            for row in cursor.fetchall():
+                self.libero_player_ids.add(row[0])
+                if row[1] is not None and row[2] is not None:
+                    self.libero_shirt_numbers.add((row[1], row[2]))
+
             for set_id, set_number in sets:
                 cursor.execute("""
-                    SELECT id, event_index, team_code, shirt_number, skill, evaluation, extended_code
+                    SELECT id, event_index, team_code, shirt_number, skill, evaluation, extended_code,
+                           home_setter_pos, away_setter_pos,
+                           home_pos1, home_pos2, home_pos3, home_pos4, home_pos5, home_pos6,
+                           away_pos1, away_pos2, away_pos3, away_pos4, away_pos5, away_pos6,
+                           player_id
                     FROM events
                     WHERE match_id = ? AND set_id = ?
                     ORDER BY event_index
@@ -57,6 +81,29 @@ class MatchStateEngine:
                 act_count, rot_count = self._process_set(cursor, set_id, set_number, events)
                 total_actions += act_count
                 total_rotations += rot_count
+
+            # Validazione Punteggio Finale Set (25/15 punti e scarto di 2)
+            cursor.execute("SELECT id, set_number, home_score, away_score FROM match_sets WHERE match_id = ?", (self.match_id,))
+            for s_id, s_num, h_sc, a_sc in cursor.fetchall():
+                if h_sc is not None and a_sc is not None and (h_sc > 0 or a_sc > 0):
+                    min_target = 15 if s_num == 5 else 25
+                    winner_sc = max(h_sc, a_sc)
+                    loser_sc = min(h_sc, a_sc)
+                    diff = winner_sc - loser_sc
+                    if winner_sc < min_target:
+                        err_msg = f"Punteggio finale anomalo Set {s_num}: punteggio vincente {winner_sc} inferiore al minimo ({min_target})"
+                        self.issues.append({"set": s_num, "error": err_msg})
+                        cursor.execute("""
+                            INSERT INTO validation_logs (match_id, file_name, line_number, raw_code, parsed_status, error_summary)
+                            VALUES (?, ?, NULL, ?, 'WARNING', ?)
+                        """, (self.match_id, self.match_code, f"SET_{s_num}", err_msg))
+                    elif diff < 2:
+                        err_msg = f"Punteggio finale anomalo Set {s_num}: scarto di {diff} punti ({h_sc}:{a_sc}, richiesto scarto minimo di 2 punti)"
+                        self.issues.append({"set": s_num, "error": err_msg})
+                        cursor.execute("""
+                            INSERT INTO validation_logs (match_id, file_name, line_number, raw_code, parsed_status, error_summary)
+                            VALUES (?, ?, NULL, ?, 'WARNING', ?)
+                        """, (self.match_id, self.match_code, f"SET_{s_num}", err_msg))
 
             conn.commit()
             return {
@@ -93,12 +140,30 @@ class MatchStateEngine:
         actions_created = 0
         current_rotation_id = None
 
+        home_substitutions_count = 0
+        away_substitutions_count = 0
+
         terminal_event: Optional[Dict[str, Any]] = None
 
         for ev in events:
-            ev_id, ev_idx, team_code, shirt_number, skill, evaluation, code = ev
+            (ev_id, ev_idx, team_code, shirt_number, skill, evaluation, code,
+             h_setter_p, a_setter_p,
+             hp1, hp2, hp3, hp4, hp5, hp6,
+             ap1, ap2, ap3, ap4, ap5, ap6,
+             player_id) = ev
+
             if not code:
                 continue
+
+            # Sincronizzazione formazioni native e rotazioni registrate
+            if hp1 is not None and hp2 is not None and hp3 is not None and hp4 is not None and hp5 is not None and hp6 is not None:
+                home_pos = [hp1, hp2, hp3, hp4, hp5, hp6]
+            if ap1 is not None and ap2 is not None and ap3 is not None and ap4 is not None and ap5 is not None and ap6 is not None:
+                away_pos = [ap1, ap2, ap3, ap4, ap5, ap6]
+            if h_setter_p is not None:
+                home_setter_pos = h_setter_p
+            if a_setter_p is not None:
+                away_setter_pos = a_setter_p
 
             # --- A. MARCATORI DI FINE SET (**1set, **2set) ---
             if code.startswith("**") and "SET" in code.upper():
@@ -148,6 +213,17 @@ class MatchStateEngine:
             # --- F. SOSTITUZIONI (*c[OUT]:[IN] o ac[OUT]:[IN]) ---
             if len(code) >= 7 and code[1] in ('c', 'C') and ':' in code:
                 t_char = code[0]
+                if t_char == '*':
+                    home_substitutions_count += 1
+                    if home_substitutions_count > 6:
+                        err_msg = f"Superato il limite massimo di 6 sostituzioni per la squadra di Casa nel set {set_number} (effettuate: {home_substitutions_count})"
+                        self._log_issue(cursor, ev_idx, code, err_msg, ev_id)
+                else:
+                    away_substitutions_count += 1
+                    if away_substitutions_count > 6:
+                        err_msg = f"Superato il limite massimo di 6 sostituzioni per la squadra Ospite nel set {set_number} (effettuate: {away_substitutions_count})"
+                        self._log_issue(cursor, ev_idx, code, err_msg, ev_id)
+
                 try:
                     p_out = int(code[2:4])
                     p_in = int(code[5:7])
@@ -217,6 +293,19 @@ class MatchStateEngine:
                 current_serving_team = team_code
                 rally_serving_team = team_code
                 terminal_event = None
+
+                # Controllo divieto di battuta per il Libero
+                is_libero = False
+                if player_id is not None and player_id in self.libero_player_ids:
+                    is_libero = True
+                elif shirt_number is not None:
+                    t_id = self.home_team_id if team_code == '*' else self.away_team_id
+                    if (t_id, shirt_number) in self.libero_shirt_numbers:
+                        is_libero = True
+
+                if is_libero:
+                    err_msg = f"Fallo del Libero: atleta #{shirt_number} designata come Libero non può effettuare il servizio"
+                    self._log_issue(cursor, ev_idx, code, err_msg, ev_id)
 
                 pos1_player = home_pos[0] if team_code == '*' else away_pos[0]
                 if pos1_player is None and shirt_number is not None:

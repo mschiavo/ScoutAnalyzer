@@ -212,13 +212,22 @@ class IngestionManager:
             last_name = parts[0] if parts else f"Player_{shirt}"
             first_name = " ".join(parts[1:]) if len(parts) > 1 else ""
 
+            role_code = str(p.get("role_code", "")).strip()
+            role_id = None
+            if role_code:
+                cursor.execute("SELECT id FROM roles WHERE dv_role_code = ? OR code = ?", (role_code, role_code))
+                r_row = cursor.fetchone()
+                if r_row:
+                    role_id = r_row[0]
+
             cursor.execute("""
-                INSERT INTO players (code, first_name, last_name)
-                VALUES (?, ?, ?)
+                INSERT INTO players (code, first_name, last_name, role_id)
+                VALUES (?, ?, ?, ?)
                 ON CONFLICT(code) DO UPDATE SET
                     first_name = excluded.first_name,
-                    last_name = excluded.last_name
-            """, (code, first_name, last_name))
+                    last_name = excluded.last_name,
+                    role_id = COALESCE(excluded.role_id, players.role_id)
+            """, (code, first_name, last_name, role_id))
 
             cursor.execute("SELECT id FROM players WHERE code = ?", (code,))
             player_id = cursor.fetchone()[0]
