@@ -1,0 +1,26 @@
+{
+  "skills": ["S", "R", "E", "A", "B", "D", "F"],
+  "evaluations": ["#", "+", "!", "-", "/", "="],
+  "terminal_evaluations": {
+    "S": ["#", "="],
+    "A": ["#", "=", "/"],
+    "B": ["#", "="],
+    "D": ["="],
+    "R": ["="],
+    "E": ["="],
+    "F": ["="]
+  },
+  "roles": {
+    "1": { "code": "L", "name": "Libero" },
+    "2": { "code": "S", "name": "Schiacciatore" },
+    "3": { "code": "O", "name": "Opposto" },
+    "4": { "code": "C", "name": "Centrale" },
+    "5": { "code": "P", "name": "Palleggiatore" }
+  },
+  "rules": {
+    "max_sets": 5,
+    "set_points_regular": 25,
+    "set_points_tiebreak": 15,
+    "min_points_margin": 2
+  }
+}

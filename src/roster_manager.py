@@ -1,0 +1,273 @@
+import os
+import shutil
+import sqlite3
+import hashlib
+import json
+import requests
+from datetime import datetime
+from typing import Dict, List, Any, Optional
+
+DEFAULT_CONFIG_PATH = "config/config.json"
+
+class RosterManager:
+    """Gestisce il download, il backup intelligente, l'aggiornamento a DB (con soft-delete)
+    dei file roster ufficiali .sq, e il controllo atlete.
+    """
+    def __init__(self, config_path: str = DEFAULT_CONFIG_PATH):
+        self.config_path = config_path
+        self.config = self._load_config()
+
+        self.db_path = self.config.get("db_path", "scoutanalyzer.db")
+        self.current_dir = self.config.get("rosters_current_dir", r"D:\Volley\B1FB\rosters\current")
+        self.backup_dir = self.config.get("rosters_backup_dir", r"D:\Volley\B1FB\rosters\backups")
+        self.base_url = self.config.get("volleynetwork_base_url", "https://volleynetworkitalia.it/data-files/volleynetworkitalia/dropbox/rosters/")
+
+        os.makedirs(self.current_dir, exist_ok=True)
+        os.makedirs(self.backup_dir, exist_ok=True)
+
+    def _load_config(self) -> Dict[str, Any]:
+        if os.path.exists(self.config_path):
+            with open(self.config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return {}
+
+    def _file_hash(self, file_path: str) -> str:
+        """Calcola l'hash MD5 di un file locale."""
+        hasher = hashlib.md5()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+
+    def download_roster_for_team(self, team_code: str) -> Dict[str, Any]:
+        """Scarica il file .sq ufficiale da Volley Network.
+        Esegue il backup con timestamp solo ed esclusivamente se il file scaricato differisce da quello locale.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT roster_code, name FROM teams WHERE code = ?", (team_code,))
+        team = cursor.fetchone()
+        conn.close()
+
+        if not team or not team[0]:
+            return {"status": "ERROR", "message": f"Nessun roster_code configurato per la squadra '{team_code}'."}
+
+        roster_code, team_name = team
+        url = f"{self.base_url.rstrip('/')}/{roster_code}.sq"
+        file_path = os.path.join(self.current_dir, f"{roster_code}.sq")
+
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            new_content = response.content
+
+            backup_created = False
+            backup_path = None
+
+            if os.path.exists(file_path):
+                # Confrontiamo il contenuto prima di fare backup per non creare file duplicati
+                with open(file_path, "rb") as f:
+                    old_content = f.read()
+
+                if hashlib.md5(new_content).hexdigest() != hashlib.md5(old_content).hexdigest():
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    backup_path = os.path.join(self.backup_dir, f"{roster_code}_{timestamp}.sq")
+                    shutil.copy2(file_path, backup_path)
+                    backup_created = True
+                else:
+                    # File identico: non serve sporcare la cartella dei backup
+                    return {
+                        "status": "SUCCESS",
+                        "team_name": team_name,
+                        "roster_code": roster_code,
+                        "path": file_path,
+                        "note": "File identico, nessun backup necessario."
+                    }
+
+            with open(file_path, "wb") as f:
+                f.write(new_content)
+
+            return {
+                "status": "SUCCESS",
+                "team_name": team_name,
+                "roster_code": roster_code,
+                "path": file_path,
+                "backup_created": backup_created,
+                "backup_path": backup_path
+            }
+        except Exception as e:
+            return {"status": "ERROR", "message": f"Errore download {team_name} ({roster_code}): {e}"}
+
+    def download_all_rosters(self) -> List[Dict[str, Any]]:
+        """Scarica il file roster per tutte le squadre censite con un roster_code valido."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT code FROM teams WHERE roster_code IS NOT NULL AND roster_code != ''")
+        teams = cursor.fetchall()
+        conn.close()
+
+        results = []
+        for (code,) in teams:
+            res = self.download_roster_for_team(code)
+            results.append((code, res))
+        return results
+
+    def sync_roster_file_to_db(self, team_code: str, execution_date: Optional[str] = None) -> Dict[str, Any]:
+        """Legge il file .sq locale e aggiorna il database.
+        Applica il soft-delete (valid_to = data_odierna) alle atlete non più presenti nel roster.
+        """
+        today_str = execution_date or datetime.now().strftime("%Y-%m-%d")
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        # Mappa ruoli { dv_role_code: role_id }
+        cursor.execute("SELECT dv_role_code, id FROM roles WHERE dv_role_code IS NOT NULL")
+        role_map = {str(row[0]): row[1] for row in cursor.fetchall()}
+
+        cursor.execute("SELECT id, roster_code, name FROM teams WHERE code = ?", (team_code,))
+        team = cursor.fetchone()
+
+        if not team or not team[1]:
+            conn.close()
+            return {"status": "ERROR", "message": f"Squadra '{team_code}' non trovata o priva di roster_code."}
+
+        team_id, roster_code, team_name = team
+        file_path = os.path.join(self.current_dir, f"{roster_code}.sq")
+
+        if not os.path.exists(file_path):
+            conn.close()
+            return {"status": "ERROR", "message": f"File roster locale non trovato: {file_path}. Scaricare prima il file .sq."}
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except UnicodeDecodeError:
+            with open(file_path, "r", encoding="latin-1") as f:
+                content = f.read()
+
+        players_data = self._parse_sq_content(content)
+        current_sq_player_codes = set()
+
+        for p in players_data:
+            current_sq_player_codes.add(p["code"])
+            birth_year = None
+            if p["birth_date"] and '/' in p["birth_date"]:
+                try:
+                    birth_year = int(p["birth_date"].split('/')[-1])
+                except ValueError:
+                    pass
+
+            role_id = role_map.get(str(p.get("raw_role_code")))
+
+            # 1. Upsert su anagrafica atlete (players)
+            cursor.execute("""
+                INSERT INTO players (code, first_name, last_name, birth_year, role_id)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(code) DO UPDATE SET
+                    first_name = excluded.first_name,
+                    last_name = excluded.last_name,
+                    birth_year = COALESCE(excluded.birth_year, players.birth_year),
+                    role_id = COALESCE(excluded.role_id, players.role_id)
+            """, (p["code"], p["first_name"], p["last_name"], birth_year, role_id))
+
+            cursor.execute("SELECT id FROM players WHERE code = ?", (p["code"],))
+            player_id = cursor.fetchone()[0]
+
+            # 2. Upsert su team_players (se nuova atleta, valid_from = data odierna, valid_to = NULL)
+            cursor.execute("""
+                SELECT id, valid_from FROM team_players 
+                WHERE team_id = ? AND player_id = ?
+            """, (team_id, player_id))
+            existing_tp = cursor.fetchone()
+
+            if existing_tp:
+                # Riattiva l'atleta se precedentemente disattivata
+                cursor.execute("""
+                    UPDATE team_players 
+                    SET shirt_number = ?, valid_to = NULL 
+                    WHERE id = ?
+                """, (p["shirt_number"], existing_tp[0]))
+            else:
+                cursor.execute("""
+                    INSERT INTO team_players (team_id, player_id, shirt_number, valid_from, valid_to)
+                    VALUES (?, ?, ?, ?, NULL)
+                """, (team_id, player_id, p["shirt_number"], today_str))
+
+        # 3. Soft-delete delle atlete non più presenti nel file .sq
+        cursor.execute("""
+            SELECT tp.id, p.code 
+            FROM team_players tp
+            JOIN players p ON tp.player_id = p.id
+            WHERE tp.team_id = ? AND (tp.valid_to IS NULL OR tp.valid_to > ?)
+        """, (team_id, today_str))
+        active_db_players = cursor.fetchall()
+
+        deactivated_count = 0
+        for tp_id, p_code in active_db_players:
+            if p_code not in current_sq_player_codes:
+                cursor.execute("UPDATE team_players SET valid_to = ? WHERE id = ?", (today_str, tp_id))
+                deactivated_count += 1
+
+        conn.commit()
+        conn.close()
+        return {
+            "status": "SUCCESS",
+            "team_name": team_name,
+            "updated_count": len(players_data),
+            "deactivated_count": deactivated_count
+        }
+
+    def sync_all_rosters_to_db(self) -> List[Dict[str, Any]]:
+        """Aggiorna il database per tutte le squadre con file .sq disponibili."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT code FROM teams WHERE roster_code IS NOT NULL AND roster_code != ''")
+        teams = cursor.fetchall()
+        conn.close()
+
+        results = []
+        for (code,) in teams:
+            res = self.sync_roster_file_to_db(code)
+            results.append((code, res))
+        return results
+
+    def _parse_sq_content(self, content: str) -> List[Dict[str, Any]]:
+        """Parser preciso del file .sq a tabulazioni.
+        Struttura verificata:
+        Col 0: shirt_number
+        Col 1: player_code
+        Col 2: last_name
+        Col 3: birth_date
+        Col 6: code L (Libero) o C (Capitano)
+        Col 8: first_name
+        Col 9: raw_role_code (1-5)
+        """
+        players = []
+        for line in content.splitlines():
+            line_str = line.strip()
+            if not line_str or line_str.startswith("DV-Team"):
+                continue
+
+            parts = line_str.split('\t')
+            if len(parts) >= 10 and '-' in parts[1]:
+                try:
+                    shirt_number = int(parts[0].strip()) if parts[0].strip().isdigit() else None
+                    player_code = parts[1].strip()
+                    last_name = parts[2].strip()
+                    birth_date = parts[3].strip()
+                    first_name = parts[8].strip() if len(parts) > 8 else ""
+                    raw_role_code = parts[9].strip() if len(parts) > 9 else ""
+
+                    if player_code and last_name:
+                        players.append({
+                            "shirt_number": shirt_number,
+                            "code": player_code,
+                            "last_name": last_name,
+                            "first_name": first_name,
+                            "birth_date": birth_date,
+                            "raw_role_code": raw_role_code
+                        })
+                except Exception:
+                    continue
+        return players
