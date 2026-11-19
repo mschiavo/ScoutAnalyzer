@@ -1,0 +1,46 @@
+import os
+import uvicorn
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, RedirectResponse
+
+from src.api.routes import router as api_router
+
+app = FastAPI(
+    title="ScoutAnalyzer Web API & Dashboard",
+    description="Piattaforma di Audit, Ispezione e Validazione Regolamentare per File Scout Data Volley (.dvw)",
+    version="1.2.0"
+)
+
+# Abilitazione CORS per consentire l'accesso sia alla SPA interna che a frontend esterni (es. app Vite su porta 5173)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Inclusione delle rotte API
+app.include_router(api_router)
+
+# Mount della directory dei file statici frontend (se presente)
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    @app.get("/", include_in_schema=False)
+    def serve_frontend_root():
+        index_file = os.path.join(static_dir, "index.html")
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+        return RedirectResponse(url="/docs")
+else:
+    @app.get("/", include_in_schema=False)
+    def redirect_to_docs():
+        return RedirectResponse(url="/docs")
+
+if __name__ == "__main__":
+    print("Avvio del server ScoutAnalyzer Web su http://127.0.0.1:8000 ...")
+    uvicorn.run("web_app:app", host="127.0.0.1", port=8000, reload=True)
