@@ -278,7 +278,7 @@ select:focus, input[type="text"]:focus {
 /* DASHBOARD MAIN GRID */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 460px 1fr;
+  grid-template-columns: 480px 1fr;
   gap: 20px;
   padding: 20px 28px;
   flex: 1;
@@ -296,6 +296,11 @@ select:focus, input[type="text"]:focus {
   border-radius: 10px;
   display: flex;
   flex-direction: column;
+}
+
+.court-panel {
+  overflow-y: auto;
+  max-height: calc(100vh - 200px);
 }
 
 .panel-header {
@@ -318,7 +323,7 @@ select:focus, input[type="text"]:focus {
 
 /* VOLLEYBALL COURT SVG */
 .court-container {
-  padding: 14px;
+  padding: 10px 14px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -326,7 +331,7 @@ select:focus, input[type="text"]:focus {
 
 .court-svg {
   width: 100%;
-  max-width: 600px;
+  max-width: 420px;
   height: auto;
 }
 
@@ -361,10 +366,11 @@ select:focus, input[type="text"]:focus {
 }
 
 .court-team-title {
-  fill: rgba(255, 255, 255, 0.7);
-  font-size: 13px;
-  font-weight: 700;
+  fill: #ffffff;
+  font-size: 14px;
+  font-weight: 800;
   text-anchor: middle;
+  letter-spacing: 0.5px;
 }
 
 /* PLAYER NODES ON COURT */
@@ -377,7 +383,7 @@ select:focus, input[type="text"]:focus {
 
 .player-node .p-num {
   fill: #ffffff;
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 800;
   text-anchor: middle;
 }
@@ -385,8 +391,16 @@ select:focus, input[type="text"]:focus {
 .player-node .z-label {
   fill: #94a3b8;
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   text-anchor: middle;
+}
+
+.player-node .p-name {
+  fill: #cbd5e1;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-anchor: middle;
+  letter-spacing: 0.3px;
 }
 
 /* Special player badges */
