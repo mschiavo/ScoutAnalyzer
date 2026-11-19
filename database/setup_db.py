@@ -151,6 +151,12 @@ CREATE TABLE IF NOT EXISTS events (
     end_subzone CHAR(1),
     extended_code TEXT,
     video_frame INTEGER,              -- Frame o timestamp video sincronizzato
+    home_setter_pos INTEGER,
+    away_setter_pos INTEGER,
+    home_pos1 INTEGER, home_pos2 INTEGER, home_pos3 INTEGER,
+    home_pos4 INTEGER, home_pos5 INTEGER, home_pos6 INTEGER,
+    away_pos1 INTEGER, away_pos2 INTEGER, away_pos3 INTEGER,
+    away_pos4 INTEGER, away_pos5 INTEGER, away_pos6 INTEGER,
     is_valid BOOLEAN DEFAULT 1,
     error_note TEXT,
     FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
@@ -172,6 +178,11 @@ CREATE TABLE IF NOT EXISTS validation_logs (
     validated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
 );
+
+-- 13. Indici per ottimizzazione performance query analitiche
+CREATE INDEX IF NOT EXISTS idx_events_match ON events(match_id, set_id, event_index);
+CREATE INDEX IF NOT EXISTS idx_rotations_match ON rotations(match_id, set_id);
+CREATE INDEX IF NOT EXISTS idx_logs_match ON validation_logs(match_id, line_number);
 """
 
 def create_database(db_path: str = DB_PATH):
@@ -179,6 +190,22 @@ def create_database(db_path: str = DB_PATH):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.executescript(SCHEMA_DDL)
+
+    # Migrazione colonne se la tabella events esisteva già
+    cursor.execute("PRAGMA table_info(events)")
+    existing_cols = {r[1] for r in cursor.fetchall()}
+    new_cols = [
+        ("home_setter_pos", "INTEGER"),
+        ("away_setter_pos", "INTEGER"),
+        ("home_pos1", "INTEGER"), ("home_pos2", "INTEGER"), ("home_pos3", "INTEGER"),
+        ("home_pos4", "INTEGER"), ("home_pos5", "INTEGER"), ("home_pos6", "INTEGER"),
+        ("away_pos1", "INTEGER"), ("away_pos2", "INTEGER"), ("away_pos3", "INTEGER"),
+        ("away_pos4", "INTEGER"), ("away_pos5", "INTEGER"), ("away_pos6", "INTEGER"),
+    ]
+    for col_name, col_type in new_cols:
+        if col_name not in existing_cols:
+            cursor.execute(f"ALTER TABLE events ADD COLUMN {col_name} {col_type}")
+
     conn.commit()
     conn.close()
     print(f"Database SQLite '{db_path}' inizializzato con successo con lo schema DDL unificato (12 tabelle).")

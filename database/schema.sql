@@ -146,6 +146,12 @@ CREATE TABLE IF NOT EXISTS events (
     end_subzone CHAR(1),
     extended_code TEXT,
     video_frame INTEGER,              -- Frame o timestamp video sincronizzato
+    home_setter_pos INTEGER,
+    away_setter_pos INTEGER,
+    home_pos1 INTEGER, home_pos2 INTEGER, home_pos3 INTEGER,
+    home_pos4 INTEGER, home_pos5 INTEGER, home_pos6 INTEGER,
+    away_pos1 INTEGER, away_pos2 INTEGER, away_pos3 INTEGER,
+    away_pos4 INTEGER, away_pos5 INTEGER, away_pos6 INTEGER,
     is_valid BOOLEAN DEFAULT 1,
     error_note TEXT,
     FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
@@ -167,3 +173,8 @@ CREATE TABLE IF NOT EXISTS validation_logs (
     validated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
 );
+
+-- 13. Indici per ottimizzazione performance query analitiche
+CREATE INDEX IF NOT EXISTS idx_events_match ON events(match_id, set_id, event_index);
+CREATE INDEX IF NOT EXISTS idx_rotations_match ON rotations(match_id, set_id);
+CREATE INDEX IF NOT EXISTS idx_logs_match ON validation_logs(match_id, line_number);
