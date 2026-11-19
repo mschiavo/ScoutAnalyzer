@@ -97,6 +97,15 @@ class IngestionManager:
                 if is_valid == 0:
                     syntax_errors.append((match_id, match_code, ev["event_index"], ev.get("extended_code"), "ERROR", error_note))
 
+                home_setter_pos = ev.get("home_setter_pos")
+                away_setter_pos = ev.get("away_setter_pos")
+                video_frame = ev.get("video_frame")
+
+                raw_h_lineup = ev.get("home_lineup") or []
+                h_pos = (raw_h_lineup + [None] * 6)[:6]
+                raw_a_lineup = ev.get("away_lineup") or []
+                a_pos = (raw_a_lineup + [None] * 6)[:6]
+
                 events_to_insert.append((
                     match_id,
                     set_id,
@@ -113,6 +122,11 @@ class IngestionManager:
                     ev.get("end_zone"),
                     ev.get("end_subzone"),
                     ev.get("extended_code"),
+                    video_frame,
+                    home_setter_pos,
+                    away_setter_pos,
+                    h_pos[0], h_pos[1], h_pos[2], h_pos[3], h_pos[4], h_pos[5],
+                    a_pos[0], a_pos[1], a_pos[2], a_pos[3], a_pos[4], a_pos[5],
                     is_valid,
                     error_note
                 ))
@@ -122,8 +136,20 @@ class IngestionManager:
                     INSERT INTO events (
                         match_id, set_id, event_index, team_code, shirt_number, player_id,
                         skill, skill_type, evaluation, combo_code, target_attacker,
-                        start_zone, end_zone, end_subzone, extended_code, is_valid, error_note
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        start_zone, end_zone, end_subzone, extended_code, video_frame,
+                        home_setter_pos, away_setter_pos,
+                        home_pos1, home_pos2, home_pos3, home_pos4, home_pos5, home_pos6,
+                        away_pos1, away_pos2, away_pos3, away_pos4, away_pos5, away_pos6,
+                        is_valid, error_note
+                    ) VALUES (
+                        ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?,
+                        ?, ?,
+                        ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?,
+                        ?, ?
+                    )
                 """, events_to_insert)
 
             # Persistiamo gli eventuali log di errore sintattico
