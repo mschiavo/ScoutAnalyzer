@@ -15,6 +15,7 @@ def test_static_files_exist_and_structure():
     assert "court-container" in html
     assert "events-table" in html
     assert "court-svg" in html
+    assert "ScoutAnalyzer 3000" in html
 
 def test_serve_frontend_root():
     response = client.get("/")

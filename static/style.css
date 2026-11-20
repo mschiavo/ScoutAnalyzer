@@ -278,13 +278,14 @@ select:focus, input[type="text"]:focus {
 /* DASHBOARD MAIN GRID */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 480px 1fr;
+  grid-template-columns: 340px 1fr;
   gap: 20px;
-  padding: 20px 28px;
+  padding: 16px 24px;
   flex: 1;
+  align-items: start;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1050px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
@@ -299,8 +300,24 @@ select:focus, input[type="text"]:focus {
 }
 
 .court-panel {
-  overflow-y: auto;
-  max-height: calc(100vh - 200px);
+  position: sticky;
+  top: 14px;
+  overflow: hidden;
+  height: fit-content;
+  max-height: none;
+}
+
+.court-panel .panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.court-panel .panel-header h3 {
+  font-size: 0.88rem;
+  font-weight: 700;
 }
 
 .panel-header {
@@ -323,7 +340,7 @@ select:focus, input[type="text"]:focus {
 
 /* VOLLEYBALL COURT SVG */
 .court-container {
-  padding: 10px 14px;
+  padding: 8px 12px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -331,7 +348,7 @@ select:focus, input[type="text"]:focus {
 
 .court-svg {
   width: 100%;
-  max-width: 420px;
+  max-width: 310px;
   height: auto;
 }
 
@@ -423,9 +440,9 @@ select:focus, input[type="text"]:focus {
 .court-legend {
   display: flex;
   justify-content: center;
-  gap: 18px;
-  padding: 10px;
-  font-size: 0.78rem;
+  gap: 12px;
+  padding: 6px 10px;
+  font-size: 0.72rem;
   color: var(--text-muted);
   border-top: 1px solid var(--border-color);
 }
