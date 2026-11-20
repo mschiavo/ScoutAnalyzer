@@ -195,6 +195,48 @@ class StorageManager:
 
         return removed_local
 
+    def save_roster(self, roster_code: str, content: bytes, is_backup: bool = False, timestamp: Optional[str] = None) -> str:
+        """Salva un file roster (.sq) nello storage (current o backup).
+        Restituisce il path relativo della chiave.
+        """
+        from datetime import datetime
+        clean_code = str(roster_code).strip()
+        if is_backup:
+            ts = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
+            rel_path = f"rosters/backups/{clean_code}_{ts}.sq"
+        else:
+            rel_path = f"rosters/current/{clean_code}.sq"
+
+        full_path = os.path.join(self.base_dir, rel_path)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        with open(full_path, "wb") as f:
+            f.write(content)
+
+        if self.backend == "s3" and self.s3_client:
+            self._upload_s3(content, rel_path)
+
+        return rel_path
+
+    def get_roster_bytes(self, roster_code: str) -> Optional[bytes]:
+        """Recupera i byte del roster corrente (prima da cache locale, poi da S3)."""
+        rel_path = f"rosters/current/{str(roster_code).strip()}.sq"
+        full_path = os.path.join(self.base_dir, rel_path)
+        if os.path.exists(full_path):
+            with open(full_path, "rb") as f:
+                return f.read()
+
+        if self.backend == "s3" and self.s3_client:
+            try:
+                data = self._download_s3(rel_path)
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                with open(full_path, "wb") as f:
+                    f.write(data)
+                return data
+            except Exception:
+                return None
+
+        return None
+
     def _upload_s3(self, file_bytes: bytes, relative_path: str) -> bool:
         """Esegue l'upload di un file su Cloudflare R2 / AWS S3 con gestione errori trasparente."""
         try:

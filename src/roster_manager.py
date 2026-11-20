@@ -13,13 +13,18 @@ class RosterManager:
     """Gestisce il download, il backup intelligente, l'aggiornamento a DB (con soft-delete)
     dei file roster ufficiali .sq, e il controllo atlete.
     """
-    def __init__(self, config_path: str = DEFAULT_CONFIG_PATH):
+    def __init__(self, config_path: str = DEFAULT_CONFIG_PATH, storage_manager: Optional[Any] = None):
         self.config_path = config_path
         self.config = self._load_config()
 
-        self.db_path = self.config.get("db_path", "scoutanalyzer.db")
-        self.current_dir = self.config.get("rosters_current_dir", r"D:\Volley\B1FB\rosters\current")
-        self.backup_dir = self.config.get("rosters_backup_dir", r"D:\Volley\B1FB\rosters\backups")
+        from src.api.routes import get_db_path
+        self.db_path = get_db_path()
+
+        from src.storage_manager import StorageManager
+        self.storage = storage_manager or StorageManager()
+
+        self.current_dir = os.path.join(self.storage.base_dir, "rosters", "current")
+        self.backup_dir = os.path.join(self.storage.base_dir, "rosters", "backups")
         self.base_url = self.config.get("volleynetwork_base_url", "https://volleynetworkitalia.it/data-files/volleynetworkitalia/dropbox/rosters/")
 
         os.makedirs(self.current_dir, exist_ok=True)
@@ -54,7 +59,6 @@ class RosterManager:
 
         roster_code, team_name = team
         url = f"{self.base_url.rstrip('/')}/{roster_code}.sq"
-        file_path = os.path.join(self.current_dir, f"{roster_code}.sq")
 
         try:
             response = requests.get(url, timeout=10)
@@ -64,34 +68,28 @@ class RosterManager:
             backup_created = False
             backup_path = None
 
-            if os.path.exists(file_path):
-                # Confrontiamo il contenuto prima di fare backup per non creare file duplicati
-                with open(file_path, "rb") as f:
-                    old_content = f.read()
-
+            old_content = self.storage.get_roster_bytes(roster_code)
+            if old_content:
                 if hashlib.md5(new_content).hexdigest() != hashlib.md5(old_content).hexdigest():
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    backup_path = os.path.join(self.backup_dir, f"{roster_code}_{timestamp}.sq")
-                    shutil.copy2(file_path, backup_path)
+                    backup_path = self.storage.save_roster(roster_code, old_content, is_backup=True, timestamp=timestamp)
                     backup_created = True
                 else:
-                    # File identico: non serve sporcare la cartella dei backup
                     return {
                         "status": "SUCCESS",
                         "team_name": team_name,
                         "roster_code": roster_code,
-                        "path": file_path,
+                        "storage_path": f"rosters/current/{roster_code}.sq",
                         "note": "File identico, nessun backup necessario."
                     }
 
-            with open(file_path, "wb") as f:
-                f.write(new_content)
+            current_path = self.storage.save_roster(roster_code, new_content, is_backup=False)
 
             return {
                 "status": "SUCCESS",
                 "team_name": team_name,
                 "roster_code": roster_code,
-                "path": file_path,
+                "storage_path": current_path,
                 "backup_created": backup_created,
                 "backup_path": backup_path
             }
@@ -133,18 +131,16 @@ class RosterManager:
             return {"status": "ERROR", "message": f"Squadra '{team_code}' non trovata o priva di roster_code."}
 
         team_id, roster_code, team_name = team
-        file_path = os.path.join(self.current_dir, f"{roster_code}.sq")
+        content_bytes = self.storage.get_roster_bytes(roster_code)
 
-        if not os.path.exists(file_path):
+        if not content_bytes:
             conn.close()
-            return {"status": "ERROR", "message": f"File roster locale non trovato: {file_path}. Scaricare prima il file .sq."}
+            return {"status": "ERROR", "message": f"File roster non trovato nello storage per squadra '{team_code}' ({roster_code}.sq). Scaricare prima il file .sq."}
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
+            content = content_bytes.decode("utf-8")
         except UnicodeDecodeError:
-            with open(file_path, "r", encoding="latin-1") as f:
-                content = f.read()
+            content = content_bytes.decode("latin-1")
 
         players_data = self._parse_sq_content(content)
         current_sq_player_codes = set()

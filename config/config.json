@@ -1,7 +1,4 @@
 {
-  "base_volley_dir": "D:\\Volley\\B1FB",
-  "rosters_current_dir": "D:\\Volley\\B1FB\\rosters\\current",
-  "rosters_backup_dir": "D:\\Volley\\B1FB\\rosters\\backups",
   "db_path": "scoutanalyzer.db",
   "volleynetwork_base_url": "https://volleynetworkitalia.it/data-files/volleynetworkitalia/dropbox/rosters/",
   "validation": {

@@ -116,3 +116,39 @@ def test_storage_manager_s3_fallback_on_network_error(tmp_path):
 
         assert rel_path == "2026-2027/CF/A/01/fallback_match.dvw"
         assert os.path.exists(os.path.join(storage_dir, rel_path))
+
+
+def test_roster_storage_on_bucket_and_local(tmp_path):
+    storage_dir = str(tmp_path / "storage")
+    mock_s3 = MagicMock()
+
+    with patch("boto3.client", return_value=mock_s3):
+        mgr = StorageManager(
+            base_dir=storage_dir,
+            backend="s3",
+            endpoint_url="https://fake-endpoint.r2.cloudflarestorage.com",
+            access_key="fake-key",
+            secret_key="fake-secret",
+            bucket_name="test-bucket"
+        )
+
+        content = b"0;1;Rossi;Mario;P;\n"
+        # 1. Salvataggio roster corrente
+        rel_path = mgr.save_roster(roster_code="2761", content=content, is_backup=False)
+        assert rel_path == "rosters/current/2761.sq"
+        assert os.path.exists(os.path.join(storage_dir, rel_path))
+        mock_s3.put_object.assert_called_with(
+            Bucket="test-bucket",
+            Key="rosters/current/2761.sq",
+            Body=content
+        )
+
+        # 2. Salvataggio backup roster con timestamp
+        rel_bak = mgr.save_roster(roster_code="2761", content=content, is_backup=True, timestamp="20261120_153000")
+        assert rel_bak == "rosters/backups/2761_20261120_153000.sq"
+        assert os.path.exists(os.path.join(storage_dir, rel_bak))
+
+        # 3. Recupero bytes roster
+        retrieved = mgr.get_roster_bytes("2761")
+        assert retrieved == content
+
