@@ -237,6 +237,56 @@ class StorageManager:
 
         return None
 
+    def backup_database_to_storage(self, db_path: Optional[str] = None) -> bool:
+        """Esegue il backup del database SQLite sul bucket Cloudflare R2."""
+        if self.backend != "s3" or not self.s3_client:
+            return False
+
+        target_db = db_path
+        if not target_db:
+            try:
+                from src.api.routes import get_db_path
+                target_db = get_db_path()
+            except Exception:
+                target_db = "scoutanalyzer.db"
+
+        if not os.path.exists(target_db):
+            return False
+
+        try:
+            with open(target_db, "rb") as f:
+                content = f.read()
+            return self._upload_s3(content, "database/scoutanalyzer.db")
+        except Exception as e:
+            logger.warning(f"[StorageManager] Errore backup database su S3: {e}")
+            return False
+
+    def restore_database_from_storage(self, target_db_path: Optional[str] = None) -> bool:
+        """Scarica l'ultimo snapshot del database SQLite dal bucket Cloudflare R2 se presente."""
+        if self.backend != "s3" or not self.s3_client:
+            return False
+
+        target_db = target_db_path
+        if not target_db:
+            try:
+                from src.api.routes import get_db_path
+                target_db = get_db_path()
+            except Exception:
+                target_db = "scoutanalyzer.db"
+
+        try:
+            data = self._download_s3("database/scoutanalyzer.db")
+            if data and len(data) > 0:
+                os.makedirs(os.path.dirname(os.path.abspath(target_db)), exist_ok=True)
+                with open(target_db, "wb") as f:
+                    f.write(data)
+                logger.info(f"[StorageManager] Database ripristinato con successo da S3 in {target_db}")
+                return True
+        except Exception as e:
+            logger.info(f"[StorageManager] Nessun database trovato su S3 da ripristinare: {e}")
+            return False
+        return False
+
     def _upload_s3(self, file_bytes: bytes, relative_path: str) -> bool:
         """Esegue l'upload di un file su Cloudflare R2 / AWS S3 con gestione errori trasparente."""
         try:

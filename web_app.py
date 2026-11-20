@@ -12,6 +12,14 @@ from src.api.admin_routes import admin_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
+        from src.storage_manager import StorageManager
+        sm = StorageManager()
+        if sm.backend == "s3" and sm.s3_client:
+            sm.restore_database_from_storage()
+    except Exception as e:
+        print(f"Warning: restore_database_from_storage on startup: {e}")
+
+    try:
         from database.setup_db import create_database
         from src.api.routes import get_db_path
         db_p = get_db_path()

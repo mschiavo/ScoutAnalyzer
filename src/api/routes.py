@@ -262,12 +262,14 @@ def delete_match(match_id: int, current_user: User = Depends(require_admin)):
     conn.commit()
     conn.close()
 
-    if storage_path:
-        try:
-            from src.storage_manager import StorageManager
-            StorageManager().delete_dvw(storage_path)
-        except Exception:
-            pass
+    try:
+        from src.storage_manager import StorageManager
+        sm = StorageManager()
+        if storage_path:
+            sm.delete_dvw(storage_path)
+        sm.backup_database_to_storage()
+    except Exception:
+        pass
 
     return {"status": "SUCCESS", "deleted_match_id": match_id}
 
@@ -400,6 +402,10 @@ async def audit_upload(
             c.execute("UPDATE matches SET storage_path = ?, file_hash = ? WHERE id = ?", (rel_path, f_hash, match_id))
             conn.commit()
             conn.close()
+            try:
+                storage.backup_database_to_storage()
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -464,6 +470,10 @@ def audit_file(payload: AuditFileRequest, current_user: User = Depends(require_a
             c.execute("UPDATE matches SET storage_path = ?, file_hash = ? WHERE id = ?", (rel_path, f_hash, match_id))
             conn.commit()
             conn.close()
+            try:
+                storage.backup_database_to_storage()
+            except Exception:
+                pass
         except Exception:
             pass
 

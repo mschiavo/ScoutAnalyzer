@@ -803,6 +803,7 @@ async function loadAdminTeams() {
       lbl.innerHTML = `
         <input type="checkbox" value="${t.id}" class="team-chk" />
         <span class="team-code-badge">${escapeHtml(t.code)}</span>
+        <span class="team-sep">-</span>
         <span class="team-name-text">${escapeHtml(t.name)}</span>
       `;
       teamsCheckboxList.appendChild(lbl);

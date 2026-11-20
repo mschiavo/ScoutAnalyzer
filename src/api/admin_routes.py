@@ -123,6 +123,11 @@ def create_user(payload: CreateUserRequest):
             c.executemany("INSERT OR IGNORE INTO user_teams (user_id, team_id) VALUES (?, ?)", records)
 
         conn.commit()
+        try:
+            from src.storage_manager import StorageManager
+            StorageManager().backup_database_to_storage()
+        except Exception:
+            pass
     except Exception as e:
         conn.rollback()
         conn.close()
@@ -174,6 +179,11 @@ def update_user(user_id: int, payload: UpdateUserRequest):
             c.executemany("INSERT OR IGNORE INTO user_teams (user_id, team_id) VALUES (?, ?)", records)
 
     conn.commit()
+    try:
+        from src.storage_manager import StorageManager
+        StorageManager().backup_database_to_storage()
+    except Exception:
+        pass
 
     # Ricarica
     c.execute("SELECT id, username, email, role, is_active FROM users WHERE id = ?", (user_id,))
@@ -209,6 +219,11 @@ def delete_user(user_id: int, current_user: User = Depends(require_admin)):
     c.execute("DELETE FROM users WHERE id = ?", (user_id,))
     conn.commit()
     conn.close()
+    try:
+        from src.storage_manager import StorageManager
+        StorageManager().backup_database_to_storage()
+    except Exception:
+        pass
     return {"status": "SUCCESS", "deleted_user_id": user_id}
 
 # --- 3. AUDIT ACCESSI IP (user_logins) ---
@@ -318,6 +333,7 @@ def clear_all_matches():
         sm = StorageManager()
         for p in paths:
             sm.delete_dvw(p)
+        sm.backup_database_to_storage()
     except Exception:
         pass
 

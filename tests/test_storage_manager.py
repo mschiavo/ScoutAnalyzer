@@ -152,3 +152,39 @@ def test_roster_storage_on_bucket_and_local(tmp_path):
         retrieved = mgr.get_roster_bytes("2761")
         assert retrieved == content
 
+
+def test_database_backup_and_restore_storage(tmp_path):
+    storage_dir = str(tmp_path / "storage")
+    db_file = tmp_path / "test.db"
+    db_file.write_bytes(b"SQLITE_DB_DUMMY_CONTENT")
+
+    mock_s3 = MagicMock()
+    # Mock download
+    mock_s3.get_object.return_value = {"Body": MagicMock(read=lambda: b"REMOTE_DB_CONTENT")}
+
+    with patch("boto3.client", return_value=mock_s3):
+        mgr = StorageManager(
+            base_dir=storage_dir,
+            backend="s3",
+            endpoint_url="https://fake-endpoint.r2.cloudflarestorage.com",
+            access_key="fake-key",
+            secret_key="fake-secret",
+            bucket_name="test-bucket"
+        )
+
+        # 1. Backup
+        ok = mgr.backup_database_to_storage(str(db_file))
+        assert ok is True
+        mock_s3.put_object.assert_called_with(
+            Bucket="test-bucket",
+            Key="database/scoutanalyzer.db",
+            Body=b"SQLITE_DB_DUMMY_CONTENT"
+        )
+
+        # 2. Restore
+        target_restore = tmp_path / "restored.db"
+        res_ok = mgr.restore_database_from_storage(str(target_restore))
+        assert res_ok is True
+        assert target_restore.read_bytes() == b"REMOTE_DB_CONTENT"
+
+
