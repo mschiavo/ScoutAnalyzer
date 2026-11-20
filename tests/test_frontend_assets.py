@@ -60,3 +60,18 @@ def test_match_select_dropdown_clean_formatting():
 
     assert "populateMatchSelect" in js
     assert "vs ${away} — ${m.match_code}" in js
+
+def test_admin_matches_full_page_view():
+    with open("static/index.html", "r", encoding="utf-8") as f:
+        html = f.read()
+
+    assert 'id="view-dashboard"' in html
+    assert 'id="view-admin-matches"' in html
+    assert 'id="btn-back-to-dashboard"' in html
+    assert 'id="admin-matches-full-tbody"' in html
+
+    with open("static/app.js", "r", encoding="utf-8") as f:
+        js = f.read()
+
+    assert "switchView" in js
+    assert "openMatchInDashboard" in js

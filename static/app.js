@@ -308,10 +308,22 @@ function setupEventListeners() {
   btnOpenLoginsModal.addEventListener("click", openAdminLoginsModal);
   btnCloseLoginsModal.addEventListener("click", () => adminLoginsModal.classList.remove("open"));
 
-  // Admin Matches Modal & Quick Delete
-  btnOpenMatchesModal.addEventListener("click", openAdminMatchesModal);
-  btnCloseMatchesModal.addEventListener("click", () => adminMatchesModal.classList.remove("open"));
-  btnClearAllMatches.addEventListener("click", clearAllMatches);
+  // Admin Matches Navigation & Actions
+  btnOpenMatchesModal.addEventListener("click", () => switchView("admin-matches"));
+  const btnBackToDashboard = document.getElementById("btn-back-to-dashboard");
+  if (btnBackToDashboard) {
+    btnBackToDashboard.addEventListener("click", () => switchView("dashboard"));
+  }
+  const btnClearAllMatchesPage = document.getElementById("btn-clear-all-matches-page");
+  if (btnClearAllMatchesPage) {
+    btnClearAllMatchesPage.addEventListener("click", clearAllMatches);
+  }
+  if (btnCloseMatchesModal) {
+    btnCloseMatchesModal.addEventListener("click", () => adminMatchesModal.classList.remove("open"));
+  }
+  if (btnClearAllMatches) {
+    btnClearAllMatches.addEventListener("click", clearAllMatches);
+  }
   btnQuickDeleteMatch.addEventListener("click", () => {
     if (state.currentMatchId) {
       const currentMatch = state.matches.find(m => m.id === state.currentMatchId);
@@ -1083,10 +1095,72 @@ async function loadAdminLogins() {
   }
 }
 
+// --- VIEW SWITCHING (SPA) ---
+function switchView(viewName) {
+  const viewDashboard = document.getElementById("view-dashboard");
+  const viewAdminMatches = document.getElementById("view-admin-matches");
+
+  if (viewName === "admin-matches") {
+    if (viewDashboard) viewDashboard.style.display = "none";
+    if (viewAdminMatches) {
+      viewAdminMatches.style.display = "flex";
+      renderAdminMatchesFullTable();
+    }
+  } else {
+    if (viewAdminMatches) viewAdminMatches.style.display = "none";
+    if (viewDashboard) viewDashboard.style.display = "flex";
+  }
+}
+window.switchView = switchView;
+
+function openMatchInDashboard(matchId) {
+  switchView("dashboard");
+  selectMatch(matchId);
+}
+window.openMatchInDashboard = openMatchInDashboard;
+
+async function renderAdminMatchesFullTable() {
+  const tbody = document.getElementById("admin-matches-full-tbody");
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="9" class="empty-state">Caricamento partite...</td></tr>';
+  try {
+    const res = await authFetch("/api/matches");
+    if (!res.ok) throw new Error("Errore nel recupero delle partite");
+    const matches = await res.json();
+
+    if (!matches || matches.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty-state">Nessuna partita presente nel database.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = "";
+    matches.forEach(m => {
+      const tr = document.createElement("tr");
+      const logsColor = (m.logs_count || 0) > 0 ? "#f87171" : "#10b981";
+      tr.innerHTML = `
+        <td><code>${escapeHtml(m.match_code)}</code></td>
+        <td><span class="scout-author-chip">${escapeHtml(m.scout_author || "N.D.")}</span></td>
+        <td><strong>${escapeHtml(m.home_name || m.home_code || "-")}</strong></td>
+        <td><strong>${escapeHtml(m.away_name || m.away_code || "-")}</strong></td>
+        <td style="text-align: center;"><span class="score-badge-final">${m.final_score || "0 - 0"}</span></td>
+        <td><span class="set-partials-text">${escapeHtml(m.set_scores || "N.D.")}</span></td>
+        <td style="text-align: center;"><b>${m.events_count || 0}</b></td>
+        <td style="text-align: center;"><b style="color: ${logsColor};">${m.logs_count || 0}</b></td>
+        <td style="text-align: center; white-space: nowrap;">
+          <button class="btn btn-primary btn-sm" onclick="openMatchInDashboard(${m.id})">👁️ Apri Gara</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteMatch(${m.id}, '${escapeHtml(m.match_code)}')">🗑️ Elimina</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state" style="color:#ef4444;">${err.message}</td></tr>`;
+  }
+}
+
 // --- ADMIN MATCHES MANAGEMENT ---
 async function openAdminMatchesModal() {
-  adminMatchesModal.classList.add("open");
-  await renderAdminMatchesTable();
+  switchView("admin-matches");
 }
 
 async function renderAdminMatchesTable() {
@@ -1134,9 +1208,10 @@ async function deleteMatch(matchId, matchCode) {
     if (!res.ok) throw new Error(data.detail || "Errore durante l'eliminazione");
 
     await loadMatches();
-    if (adminMatchesModal.classList.contains("open")) {
+    if (adminMatchesModal && adminMatchesModal.classList.contains("open")) {
       await renderAdminMatchesTable();
     }
+    await renderAdminMatchesFullTable();
 
     if (state.currentMatchId === matchId) {
       if (state.matches.length > 0) {
@@ -1163,9 +1238,10 @@ async function clearAllMatches() {
     if (!res.ok) throw new Error(data.detail || "Errore svuotamento partite");
 
     await loadMatches();
-    if (adminMatchesModal.classList.contains("open")) {
+    if (adminMatchesModal && adminMatchesModal.classList.contains("open")) {
       await renderAdminMatchesTable();
     }
+    await renderAdminMatchesFullTable();
     state.currentMatchId = null;
     resetMatchDisplay();
     alert("Tutte le partite sono state eliminate con successo.");

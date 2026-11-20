@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ScoutAnalyzer 3000 - Volleyball Scout & Lineup Auditor</title>
-  <link rel="stylesheet" href="/static/style.css?v=3000.10">
+  <link rel="stylesheet" href="/static/style.css?v=3000.11">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏐</text></svg>">
 </head>
 <body>
@@ -79,8 +79,10 @@
       </div>
     </header>
 
-    <!-- MATCH SUMMARY BAR -->
-    <section class="match-summary-bar" id="match-summary-bar">
+    <!-- VISTA 1: DASHBOARD PRINCIPALE -->
+    <div id="view-dashboard" class="app-view active">
+      <!-- MATCH SUMMARY BAR -->
+      <section class="match-summary-bar" id="match-summary-bar">
       <div class="team-block home-team">
         <span class="team-badge">CASA (*)</span>
         <h2 id="home-team-name">--</h2>
@@ -274,6 +276,44 @@
         </div>
       </section>
     </main>
+    </div> <!-- /view-dashboard -->
+
+    <!-- VISTA 2: GESTIONE GARE (ADMIN ONLY, PAGINA INTERA TABELLARE) -->
+    <div id="view-admin-matches" class="app-view" style="display: none;">
+      <section class="admin-view-header">
+        <div class="admin-view-title-block">
+          <h2>🏐 Gestione Gare & Archivio Campionato</h2>
+          <p class="admin-view-subtitle">Archivio completo delle gare caricate con punteggi, parziali, eventi, anomalie e autore scout.</p>
+        </div>
+        <div class="admin-view-actions">
+          <button id="btn-back-to-dashboard" class="btn btn-secondary">⬅️ Torna alla Dashboard</button>
+          <button id="btn-clear-all-matches-page" class="btn btn-danger">⚠️ Svuota Tutte le Gare</button>
+        </div>
+      </section>
+
+      <section class="admin-matches-full-container">
+        <div class="table-wrapper-full">
+          <table class="simple-table admin-matches-table" id="admin-matches-full-table">
+            <thead>
+              <tr>
+                <th>Nome File / Gara</th>
+                <th>Scout</th>
+                <th>Squadra Casa</th>
+                <th>Squadra Ospite</th>
+                <th style="text-align: center;">Risultato</th>
+                <th>Parziali Set</th>
+                <th style="text-align: center;">Eventi</th>
+                <th style="text-align: center;">Anomalie</th>
+                <th style="text-align: center;">Azioni</th>
+              </tr>
+            </thead>
+            <tbody id="admin-matches-full-tbody">
+              <tr><td colspan="9" class="empty-state">Caricamento partite...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div> <!-- /view-admin-matches -->
 
     <!-- MODAL 1: AUDIT FILE DVW (ADMIN ONLY) -->
     <div class="modal-backdrop" id="audit-modal">
@@ -553,6 +593,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=3000.10"></script>
+  <script src="/static/app.js?v=3000.11"></script>
 </body>
 </html>
