@@ -89,3 +89,38 @@ True;25-20;22;
     data = response.json()
     assert data["status"] == "SUCCESS"
     assert data["events_count"] == 2
+
+
+def test_audit_upload_with_hierarchy_metadata():
+    headers = get_admin_headers()
+    sample_content = b"""[3MATCH]
+15/10/2026;20.30.00;2026/2027;Campionato;Andata;;1;1;TEST_HIERARCHY;1;Z;0;;;
+[3TEAMS]
+TH;Home Team;0;;;;;
+TV;Away Team;0;;;;;
+[3SET]
+True;25-20;22;
+[3PLAYERS-H]
+0;1;10;;;;;;;TEST;H;;;2;False;;;;;;
+[3PLAYERS-V]
+1;1;20;;;;;;;TEST;V;;;2;False;;;;;;
+[3SCOUT]
+*10SM#;;;;;;;;1;1;1;1;100;;10;11;12;13;14;15;20;21;22;23;24;25;
+*p25:20;;;;;;;;1;1;1;1;105;;10;11;12;13;14;15;20;21;22;23;24;25;
+"""
+    response = client.post(
+        "/api/audit/upload",
+        files={"file": ("&01_test_match.dvw", sample_content, "text/plain")},
+        data={
+            "campionato": "2026-2027",
+            "categoria": "B1F",
+            "girone": "B",
+            "giornata": "03"
+        },
+        headers=headers
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "SUCCESS"
+    assert "2026-2027/B1F/B/03/&01_test_match.dvw" in data.get("storage_path", "")
+

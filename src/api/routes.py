@@ -2,7 +2,7 @@ import os
 import json
 import sqlite3
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, Query, Body, File, UploadFile, Depends, Request
+from fastapi import APIRouter, HTTPException, Query, Body, File, UploadFile, Depends, Request, Form
 from pydantic import BaseModel
 
 from src.dvw_parser import DVWParser
@@ -38,6 +38,10 @@ class LoginRequest(BaseModel):
 
 class AuditFileRequest(BaseModel):
     file_path: str
+    campionato: Optional[str] = None
+    categoria: Optional[str] = None
+    girone: Optional[str] = None
+    giornata: Optional[str] = None
 
 class RosterSyncRequest(BaseModel):
     team_code: Optional[str] = None
@@ -313,7 +317,14 @@ def get_match_logs(match_id: int, current_user: User = Depends(verify_match_acce
     return rows
 
 @router.post("/audit/upload")
-async def audit_upload(file: UploadFile = File(...), current_user: User = Depends(require_admin)):
+async def audit_upload(
+    file: UploadFile = File(...),
+    campionato: Optional[str] = Form(None),
+    categoria: Optional[str] = Form(None),
+    girone: Optional[str] = Form(None),
+    giornata: Optional[str] = Form(None),
+    current_user: User = Depends(require_admin)
+):
     import tempfile
     suffix = os.path.splitext(file.filename)[1] or ".dvw"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -331,12 +342,20 @@ async def audit_upload(file: UploadFile = File(...), current_user: User = Depend
         ingest_res = ingester.ingest_dvw(parsed)
         match_id = ingest_res["match_id"]
 
-        # Archiviazione permanente in StorageManager
+        # Archiviazione permanente in StorageManager con gerarchia federale
+        rel_path = None
         try:
             from src.storage_manager import StorageManager
             storage = StorageManager()
-            season = parsed.get("match_info", {}).get("season") or "2026-2027"
-            rel_path, f_hash = storage.save_dvw(content, file.filename, season=season)
+            eff_camp = campionato or parsed.get("match_info", {}).get("season") or "2026-2027"
+            rel_path, f_hash = storage.save_dvw(
+                content,
+                file.filename,
+                campionato=eff_camp,
+                categoria=categoria or "B1F",
+                girone=girone or "B",
+                giornata=giornata or "01"
+            )
             conn = get_db_connection()
             c = conn.cursor()
             c.execute("UPDATE matches SET storage_path = ?, file_hash = ? WHERE id = ?", (rel_path, f_hash, match_id))
@@ -352,6 +371,7 @@ async def audit_upload(file: UploadFile = File(...), current_user: User = Depend
             "status": "SUCCESS",
             "match_id": match_id,
             "match_code": ingest_res["match_code"],
+            "storage_path": rel_path,
             "events_count": ingest_res["events_count"],
             "sets_count": ingest_res["sets_count"],
             "syntax_issues_count": ingest_res["syntax_issues_count"],
@@ -384,14 +404,22 @@ def audit_file(payload: AuditFileRequest, current_user: User = Depends(require_a
         ingest_res = ingester.ingest_dvw(parsed)
         match_id = ingest_res["match_id"]
 
-        # Archiviazione in StorageManager
+        # Archiviazione in StorageManager con gerarchia federale
+        rel_path = None
         try:
             with open(file_path, "rb") as f_in:
                 content = f_in.read()
             from src.storage_manager import StorageManager
             storage = StorageManager()
-            season = parsed.get("match_info", {}).get("season") or "2026-2027"
-            rel_path, f_hash = storage.save_dvw(content, os.path.basename(file_path), season=season)
+            eff_camp = payload.campionato or parsed.get("match_info", {}).get("season") or "2026-2027"
+            rel_path, f_hash = storage.save_dvw(
+                content,
+                os.path.basename(file_path),
+                campionato=eff_camp,
+                categoria=payload.categoria or "B1F",
+                girone=payload.girone or "B",
+                giornata=payload.giornata or "01"
+            )
             conn = get_db_connection()
             c = conn.cursor()
             c.execute("UPDATE matches SET storage_path = ?, file_hash = ? WHERE id = ?", (rel_path, f_hash, match_id))
@@ -408,6 +436,7 @@ def audit_file(payload: AuditFileRequest, current_user: User = Depends(require_a
             "status": "SUCCESS",
             "match_id": match_id,
             "match_code": ingest_res["match_code"],
+            "storage_path": rel_path,
             "events_count": ingest_res["events_count"],
             "sets_count": ingest_res["sets_count"],
             "syntax_issues_count": ingest_res["syntax_issues_count"],
