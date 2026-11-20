@@ -11,6 +11,7 @@ except ImportError:
     pass
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError, BotoCoreError
 
 logger = logging.getLogger(__name__)
@@ -81,7 +82,11 @@ class StorageManager:
                     endpoint_url=self.endpoint_url,
                     aws_access_key_id=self.access_key,
                     aws_secret_access_key=self.secret_key,
-                    region_name="auto"
+                    region_name="auto",
+                    config=Config(
+                        s3={"addressing_style": "path"},
+                        signature_version="s3v4"
+                    )
                 )
             except Exception as e:
                 logger.warning(f"[StorageManager] Impossibile inizializzare client S3: {e}")
