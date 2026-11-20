@@ -534,6 +534,17 @@ function updateZoneNode(nodeId, shirtNum, zoneNum, teamCode, ev) {
   }
 
   const p = getPlayerInfo(shirtNum, teamCode);
+  const textName = g.querySelector(".p-name");
+  if (textName) {
+    if (p && p.last_name) {
+      let lName = p.last_name.trim().toUpperCase();
+      if (lName.length > 9) lName = lName.substring(0, 8) + ".";
+      textName.textContent = lName;
+    } else {
+      textName.textContent = "";
+    }
+  }
+
   if (p) {
     g.setAttribute("title", `#${shirtNum} ${p.first_name || ""} ${p.last_name || ""} (${p.role_name || ""})`);
   } else {
