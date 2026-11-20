@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ScoutAnalyzer 3000 - Volleyball Scout & Lineup Auditor</title>
-  <link rel="stylesheet" href="/static/style.css?v=3000.3">
+  <link rel="stylesheet" href="/static/style.css?v=3000.4">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏐</text></svg>">
 </head>
 <body>
@@ -284,6 +284,41 @@
           <div class="input-group">
             <input type="text" id="audit-file-path" placeholder="D:\Volley\B1FB\giornata_01\&01_COR-VOL_Vicenza_b1fb_26_s.dvw" />
           </div>
+
+          <!-- GERARCHIA CATALOGAZIONE FEDERALE (S3 / R2) -->
+          <div class="upload-hierarchy-box">
+            <div class="hierarchy-header">
+              <span class="hierarchy-title">🏷️ Catalogazione Gerarchica (Storage Cloud R2 / S3)</span>
+            </div>
+            <div class="hierarchy-grid">
+              <div class="form-group-compact">
+                <label for="upload-campionato">Campionato</label>
+                <input type="text" id="upload-campionato" value="2026-2027" placeholder="2026-2027" />
+              </div>
+              <div class="form-group-compact">
+                <label for="upload-categoria">Categoria</label>
+                <select id="upload-categoria">
+                  <option value="B1F" selected>B1F</option>
+                  <option value="B2F">B2F</option>
+                  <option value="A1F">A1F</option>
+                  <option value="A2F">A2F</option>
+                  <option value="CF">CF</option>
+                  <option value="DF">DF</option>
+                  <option value="ALTRO">ALTRO</option>
+                </select>
+              </div>
+              <div class="form-group-compact">
+                <label for="upload-girone">Girone</label>
+                <input type="text" id="upload-girone" value="B" placeholder="B" maxlength="2" />
+              </div>
+              <div class="form-group-compact">
+                <label for="upload-giornata">Giornata</label>
+                <input type="text" id="upload-giornata" value="01" placeholder="01" maxlength="3" />
+              </div>
+            </div>
+            <small class="hierarchy-hint">Auto-rilevato automaticamente dal file (modificabile prima dell'invio).</small>
+          </div>
+
           <div class="preset-links">
             <span>Esempi rapidi:</span>
             <a href="#" class="preset-file" data-path="D:\Volley\B1FB\giornata_01\&01_COR-VOL_Vicenza_b1fb_26_s.dvw">Vicenza G01</a>
@@ -472,6 +507,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=3000.3"></script>
+  <script src="/static/app.js?v=3000.4"></script>
 </body>
 </html>

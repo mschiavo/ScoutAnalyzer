@@ -249,11 +249,17 @@ function setupEventListeners() {
   });
   btnCloseAuditModal.addEventListener("click", () => auditModal.classList.remove("open"));
   btnCancelAudit.addEventListener("click", () => auditModal.classList.remove("open"));
-  btnRunAudit.addEventListener("click", runAuditFile);
+  btnRunAudit.addEventListener("click", () => {
+    if (auditFileInput && auditFileInput.files && auditFileInput.files[0]) {
+      uploadAndAuditFile(auditFileInput.files[0]);
+    } else {
+      runAuditFile();
+    }
+  });
   if (auditFileInput) {
     auditFileInput.addEventListener("change", (e) => {
       if (e.target.files && e.target.files[0]) {
-        uploadAndAuditFile(e.target.files[0]);
+        autoDetectMatchHierarchy(e.target.files[0].name);
       }
     });
   }
@@ -261,8 +267,14 @@ function setupEventListeners() {
     link.addEventListener("click", (e) => {
       e.preventDefault();
       auditFilePathInput.value = link.dataset.path;
+      autoDetectMatchHierarchy(link.dataset.path);
     });
   });
+  if (auditFilePathInput) {
+    auditFilePathInput.addEventListener("input", (e) => {
+      autoDetectMatchHierarchy(e.target.value);
+    });
+  }
 
   // Roster sync
   btnSyncRosters.addEventListener("click", syncRosters);
@@ -565,8 +577,46 @@ function isPlayerLibero(shirtNum, teamCode) {
 }
 
 // --- AUDIT MODAL ACTIONS (ADMIN ONLY) ---
+function autoDetectMatchHierarchy(filename) {
+  if (!filename) return;
+  const lower = filename.toLowerCase();
+
+  // 1. Categoria & Girone: es. b1fb, b2fa, cfc, dfe, a1f, a2f
+  const catGirMatch = lower.match(/(b1f|b2f|a1f|a2f|cf|df)([a-z])\b/);
+  if (catGirMatch) {
+    const cat = catGirMatch[1].toUpperCase();
+    const gir = catGirMatch[2].toUpperCase();
+    const catSelect = document.getElementById("upload-categoria");
+    if (catSelect) catSelect.value = cat;
+    const girInput = document.getElementById("upload-girone");
+    if (girInput) girInput.value = gir;
+  }
+
+  // 2. Giornata: es. &01, g03, giornata_04, and01, andata02, 01_cor-vol
+  const gioMatch = lower.match(/(?:giornata[_-]?|g|and[_-]?|&|^)(\d{1,2})/);
+  if (gioMatch) {
+    const gioNum = parseInt(gioMatch[1], 10);
+    const gioFormatted = String(gioNum).padStart(2, "0");
+    const gioInput = document.getElementById("upload-giornata");
+    if (gioInput) gioInput.value = gioFormatted;
+  }
+
+  // 3. Campionato / Stagione: es. 2026-2027 o 2026_2027 o 2026
+  const campMatch = lower.match(/(20\d{2}[-_/]?20\d{2})/);
+  if (campMatch) {
+    const campFormatted = campMatch[1].replace(/[_/]/, "-");
+    const campInput = document.getElementById("upload-campionato");
+    if (campInput) campInput.value = campFormatted;
+  }
+}
+
 async function uploadAndAuditFile(file) {
   if (!file) return;
+
+  const camp = document.getElementById("upload-campionato").value.trim() || "2026-2027";
+  const cat = document.getElementById("upload-categoria").value || "B1F";
+  const gir = document.getElementById("upload-girone").value.trim() || "B";
+  const gio = document.getElementById("upload-giornata").value.trim() || "01";
 
   auditStatus.innerHTML = `<span style="color:#38bdf8;">⏳ Caricamento e audit di <b>${escapeHtml(file.name)}</b> in corso...</span>`;
   btnRunAudit.disabled = true;
@@ -574,6 +624,10 @@ async function uploadAndAuditFile(file) {
   try {
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("campionato", camp);
+    formData.append("categoria", cat);
+    formData.append("girone", gir);
+    formData.append("giornata", gio);
 
     const res = await authFetch("/api/audit/upload", {
       method: "POST",
@@ -588,8 +642,8 @@ async function uploadAndAuditFile(file) {
     auditStatus.innerHTML = `
       <div style="color:#10b981; font-weight:bold;">✅ Audit completato con successo!</div>
       <div style="margin-top:6px; color:#cbd5e1;">
-        Partita: <b>${data.match_code}</b> | Eventi: ${data.events_count} | Set: ${data.sets_count}<br>
-        Violazioni sintattiche: ${data.syntax_issues_count} | Anomalie State Engine: ${data.state_issues_count}
+        Partita: <b>${data.match_code}</b> | Storage: <code>${data.storage_path || "--"}</code><br>
+        Eventi: ${data.events_count} | Set: ${data.sets_count} | Violazioni: ${data.syntax_issues_count + data.state_issues_count}
       </div>
     `;
 
@@ -614,6 +668,11 @@ async function runAuditFile() {
     return;
   }
 
+  const camp = document.getElementById("upload-campionato").value.trim() || "2026-2027";
+  const cat = document.getElementById("upload-categoria").value || "B1F";
+  const gir = document.getElementById("upload-girone").value.trim() || "B";
+  const gio = document.getElementById("upload-giornata").value.trim() || "01";
+
   auditStatus.innerHTML = '<span style="color:#38bdf8;">⏳ Esecuzione audit in corso...</span>';
   btnRunAudit.disabled = true;
 
@@ -621,7 +680,13 @@ async function runAuditFile() {
     const res = await authFetch("/api/audit/file", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ file_path: path })
+      body: JSON.stringify({
+        file_path: path,
+        campionato: camp,
+        categoria: cat,
+        girone: gir,
+        giornata: gio
+      })
     });
 
     const data = await res.json();
@@ -632,7 +697,8 @@ async function runAuditFile() {
     auditStatus.innerHTML = `
       <div style="color:#10b981; font-weight:bold;">✅ Audit completato con successo!</div>
       <div style="margin-top:6px; color:#cbd5e1;">
-        Partita: <b>${data.match_code}</b> | Eventi: ${data.events_count} | Set: ${data.sets_count}
+        Partita: <b>${data.match_code}</b> | Storage: <code>${data.storage_path || "--"}</code><br>
+        Eventi: ${data.events_count} | Set: ${data.sets_count}
       </div>
     `;
 
