@@ -313,6 +313,28 @@ function setupEventListeners() {
       deleteMatch(state.currentMatchId, code);
     }
   });
+
+  // Dropdown Gestione Admin
+  const btnAdminDropdown = document.getElementById("btn-admin-dropdown");
+  const adminDropdownMenu = document.getElementById("admin-dropdown-menu");
+  if (btnAdminDropdown && adminDropdownMenu) {
+    btnAdminDropdown.addEventListener("click", (e) => {
+      e.stopPropagation();
+      adminDropdownMenu.classList.toggle("open");
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest("#admin-dropdown-wrapper")) {
+        adminDropdownMenu.classList.remove("open");
+      }
+    });
+
+    adminDropdownMenu.querySelectorAll(".dropdown-item").forEach(item => {
+      item.addEventListener("click", () => {
+        adminDropdownMenu.classList.remove("open");
+      });
+    });
+  }
 }
 
 // --- MATCH DATA API & RENDER ---

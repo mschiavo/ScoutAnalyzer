@@ -130,6 +130,59 @@ select:focus, input[type="text"]:focus, input[type="password"]:focus, input[type
   background-color: #273552;
 }
 
+/* ADMIN DROPDOWN */
+.dropdown-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.55);
+  min-width: 220px;
+  z-index: 1000;
+  overflow: hidden;
+  padding: 6px 0;
+}
+
+.dropdown-menu.open {
+  display: block;
+}
+
+.dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.dropdown-item:hover {
+  background-color: var(--bg-card-alt);
+  color: #38bdf8;
+}
+
 /* MATCH SUMMARY BAR */
 .match-summary-bar {
   display: grid;
