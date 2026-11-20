@@ -240,6 +240,37 @@ def get_match_detail(match_id: int, current_user: User = Depends(verify_match_ac
         "players_visiting": players_away
     }
 
+@router.delete("/matches/{match_id}")
+def delete_match(match_id: int, current_user: User = Depends(require_admin)):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, storage_path FROM matches WHERE id = ?", (match_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail=f"Partita con ID {match_id} non trovata.")
+
+    storage_path = row["storage_path"]
+
+    # Cascading deletes
+    c.execute("DELETE FROM actions WHERE match_id = ?", (match_id,))
+    c.execute("DELETE FROM rotations WHERE match_id = ?", (match_id,))
+    c.execute("DELETE FROM events WHERE match_id = ?", (match_id,))
+    c.execute("DELETE FROM validation_logs WHERE match_id = ?", (match_id,))
+    c.execute("DELETE FROM match_sets WHERE match_id = ?", (match_id,))
+    c.execute("DELETE FROM matches WHERE id = ?", (match_id,))
+    conn.commit()
+    conn.close()
+
+    if storage_path:
+        try:
+            from src.storage_manager import StorageManager
+            StorageManager().delete_dvw(storage_path)
+        except Exception:
+            pass
+
+    return {"status": "SUCCESS", "deleted_match_id": match_id}
+
 @router.get("/matches/{match_id}/events")
 def get_match_events(
     match_id: int,

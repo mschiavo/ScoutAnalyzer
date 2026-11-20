@@ -295,3 +295,30 @@ def revalidate_all_matches():
         })
 
     return {"status": "SUCCESS", "revalidated_matches": results}
+
+@admin_router.delete("/matches/clear")
+def clear_all_matches():
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT storage_path FROM matches WHERE storage_path IS NOT NULL AND storage_path != ''")
+    paths = [r[0] for r in c.fetchall()]
+
+    c.execute("DELETE FROM actions;")
+    c.execute("DELETE FROM rotations;")
+    c.execute("DELETE FROM events;")
+    c.execute("DELETE FROM validation_logs;")
+    c.execute("DELETE FROM match_sets;")
+    c.execute("DELETE FROM matches;")
+    c.execute("DELETE FROM sqlite_sequence WHERE name IN ('matches', 'match_sets', 'events', 'rotations', 'actions', 'validation_logs');")
+    conn.commit()
+    conn.close()
+
+    try:
+        from src.storage_manager import StorageManager
+        sm = StorageManager()
+        for p in paths:
+            sm.delete_dvw(p)
+    except Exception:
+        pass
+
+    return {"status": "SUCCESS", "message": "Tutte le partite sono state eliminate con successo."}

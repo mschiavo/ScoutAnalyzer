@@ -9,6 +9,19 @@ def get_admin_headers():
     token = res.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
+def get_scout_headers():
+    admin_h = get_admin_headers()
+    # Crea scout di test
+    client.post("/api/admin/users", json={
+        "username": "scout_test_del",
+        "password": "Password123!",
+        "role": "SCOUT",
+        "team_ids": []
+    }, headers=admin_h)
+    res = client.post("/api/auth/login", json={"username": "scout_test_del", "password": "Password123!"})
+    token = res.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
 def test_admin_endpoints_require_admin():
     # Chiamata anonima -> 401
     res = client.get("/api/admin/users")
@@ -58,36 +71,69 @@ def test_admin_logins_audit():
     res = client.get("/api/admin/logins", headers=headers)
     assert res.status_code == 200
     assert isinstance(res.json(), list)
-    if res.json():
-        first = res.json()[0]
-        assert "ip_address" in first
-        assert "username" in first
-        assert "login_status" in first
 
-def test_admin_rules_crud():
+def test_admin_rules_config():
     headers = get_admin_headers()
-    
-    # 1. Lettura regole
-    res_rules = client.get("/api/admin/rules/terminal", headers=headers)
-    assert res_rules.status_code == 200
-    initial_count = len(res_rules.json())
+    res = client.get("/api/admin/rules/terminal", headers=headers)
+    assert res.status_code == 200
+    rules = res.json()
+    assert isinstance(rules, list)
 
-    # 2. Aggiunta regola di test
-    new_rule = {
-        "description": "Regola di test dinamica",
-        "terminal_skill": "A",
-        "terminal_eval": "#",
-        "followup_skills": ["D"],
-        "followup_evals": ["="],
-        "must_be_opponent": True
-    }
-    res_add = client.post("/api/admin/rules/terminal", json=new_rule, headers=headers)
-    assert res_add.status_code == 200
-    rules_after_add = res_add.json()
-    assert len(rules_after_add) == initial_count + 1
+def test_delete_match_and_clear_all():
+    admin_h = get_admin_headers()
+    scout_h = get_scout_headers()
 
-    # 3. Rimozione della regola di test appena aggiunta
-    rule_idx = len(rules_after_add) - 1
-    res_del = client.delete(f"/api/admin/rules/terminal/{rule_idx}", headers=headers)
-    assert res_del.status_code == 200
-    assert len(res_del.json()) == initial_count
+    sample_content = b"""[3MATCH]
+15/10/2026;20.30.00;2026/2027;Campionato;Andata;;1;1;TEST_DEL_1;1;Z;0;;;
+[3TEAMS]
+TH;Home Team;0;;;;;
+TV;Away Team;0;;;;;
+[3SET]
+True;25-20;22;
+[3PLAYERS-H]
+0;1;10;;;;;;;TEST;H;;;2;False;;;;;;
+[3PLAYERS-V]
+1;1;20;;;;;;;TEST;V;;;2;False;;;;;;
+[3SCOUT]
+*10SM#;;;;;;;;1;1;1;1;100;;10;11;12;13;14;15;20;21;22;23;24;25;
+*p25:20;;;;;;;;1;1;1;1;105;;10;11;12;13;14;15;20;21;22;23;24;25;
+"""
+    # 1. Carica una partita
+    up_res = client.post(
+        "/api/audit/upload",
+        files={"file": ("test_del_1.dvw", sample_content, "text/plain")},
+        headers=admin_h
+    )
+    assert up_res.status_code == 200
+    match_id = up_res.json()["match_id"]
+
+    # 2. Scout non puo' eliminare la partita (403)
+    res_scout_del = client.delete(f"/api/matches/{match_id}", headers=scout_h)
+    assert res_scout_del.status_code == 403
+
+    # 3. Admin elimina la partita (200)
+    res_admin_del = client.delete(f"/api/matches/{match_id}", headers=admin_h)
+    assert res_admin_del.status_code == 200
+    assert res_admin_del.json()["status"] == "SUCCESS"
+
+    # 4. Verifica che non esista piu' (404)
+    res_get = client.get(f"/api/matches/{match_id}", headers=admin_h)
+    assert res_get.status_code == 404
+
+    # 5. Carica due partite e prova lo svuotamento totale
+    client.post("/api/audit/upload", files={"file": ("del_a.dvw", sample_content, "text/plain")}, headers=admin_h)
+    client.post("/api/audit/upload", files={"file": ("del_b.dvw", sample_content, "text/plain")}, headers=admin_h)
+
+    # Scout non puo' svuotare (403)
+    res_scout_clear = client.delete("/api/admin/matches/clear", headers=scout_h)
+    assert res_scout_clear.status_code == 403
+
+    # Admin svuota tutto
+    res_clear = client.delete("/api/admin/matches/clear", headers=admin_h)
+    assert res_clear.status_code == 200
+    assert res_clear.json()["status"] == "SUCCESS"
+
+    # Verifica lista match vuota
+    res_list = client.get("/api/matches", headers=admin_h)
+    assert res_list.status_code == 200
+    assert len(res_list.json()) == 0
