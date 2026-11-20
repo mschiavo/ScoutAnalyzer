@@ -140,7 +140,9 @@ CREATE TABLE IF NOT EXISTS events (
     home_pos1 INTEGER, home_pos2 INTEGER, home_pos3 INTEGER,
     home_pos4 INTEGER, home_pos5 INTEGER, home_pos6 INTEGER,
     away_pos1 INTEGER, away_pos2 INTEGER, away_pos3 INTEGER,
-    away_pos4 INTEGER, away_pos5 INTEGER, away_pos6 INTEGER
+    away_pos4 INTEGER, away_pos5 INTEGER, away_pos6 INTEGER,
+    is_valid BOOLEAN DEFAULT TRUE,
+    error_note TEXT
 );
 
 CREATE TABLE IF NOT EXISTS validation_logs (
@@ -199,6 +201,12 @@ def setup_and_seed_postgres():
         with pg_conn.cursor() as cur:
             # 1. Creazione Schema DDL
             cur.execute(PG_SCHEMA)
+            cur.execute("""
+                ALTER TABLE events ADD COLUMN IF NOT EXISTS is_valid BOOLEAN DEFAULT TRUE;
+                ALTER TABLE events ADD COLUMN IF NOT EXISTS error_note TEXT;
+                ALTER TABLE rotations ADD COLUMN IF NOT EXISTS home_libero_pos INTEGER;
+                ALTER TABLE rotations ADD COLUMN IF NOT EXISTS away_libero_pos INTEGER;
+            """)
             pg_conn.commit()
             print("✅ Schema 16 tabelle e indici verificati su Neon PostgreSQL.")
 

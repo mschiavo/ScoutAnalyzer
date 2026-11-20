@@ -529,7 +529,7 @@ class MatchStateEngine:
             home_setter_pos, away_setter_pos,
             home_pos[0], home_pos[1], home_pos[2], home_pos[3], home_pos[4], home_pos[5],
             away_pos[0], away_pos[1], away_pos[2], away_pos[3], away_pos[4], away_pos[5],
-            home_libero, away_libero, 1 if is_subst else 0
+            home_libero, away_libero, bool(is_subst)
         ))
         return cursor.lastrowid
 
