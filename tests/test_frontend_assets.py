@@ -35,3 +35,18 @@ def test_upload_modal_hierarchy_inputs():
         js = f.read()
 
     assert "autoDetectMatchHierarchy" in js
+
+def test_admin_matches_management_modal_and_quick_delete():
+    with open("static/index.html", "r", encoding="utf-8") as f:
+        html = f.read()
+
+    assert 'id="btn-open-matches-modal"' in html
+    assert 'id="admin-matches-modal"' in html
+    assert 'id="btn-quick-delete-match"' in html
+    assert 'id="btn-clear-all-matches"' in html
+
+    with open("static/app.js", "r", encoding="utf-8") as f:
+        js = f.read()
+
+    assert "deleteMatch" in js
+    assert "clearAllMatches" in js

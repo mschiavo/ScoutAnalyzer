@@ -740,6 +740,16 @@ select:focus, input[type="text"]:focus, input[type="password"]:focus, input[type
   background-color: #dc2626;
 }
 
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 0.78rem;
+}
+
+.btn-icon-only {
+  padding: 6px 10px;
+  line-height: 1;
+}
+
 .login-error {
   color: #f87171;
   font-size: 0.82rem;

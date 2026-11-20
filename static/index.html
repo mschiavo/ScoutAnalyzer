@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ScoutAnalyzer 3000 - Volleyball Scout & Lineup Auditor</title>
-  <link rel="stylesheet" href="/static/style.css?v=3000.5">
+  <link rel="stylesheet" href="/static/style.css?v=3000.6">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏐</text></svg>">
 </head>
 <body>
@@ -50,10 +50,12 @@
           <select id="match-select">
             <option value="">Caricamento partite...</option>
           </select>
+          <button id="btn-quick-delete-match" class="btn btn-danger btn-icon-only" title="Elimina la partita attualmente selezionata" style="display: none; padding: 6px 10px; font-size: 0.85rem;">🗑️</button>
         </div>
 
         <!-- ADMIN CONTROLS (Solo per ruolo ADMIN) -->
         <div id="admin-nav-group" class="admin-nav-group">
+          <button id="btn-open-matches-modal" class="btn btn-secondary">🏐 Gestione Gare</button>
           <button id="btn-open-users-modal" class="btn btn-secondary">👥 Utenti</button>
           <button id="btn-open-rules-modal" class="btn btn-secondary">⚙️ Regole</button>
           <button id="btn-open-logins-modal" class="btn btn-secondary">📋 Accessi</button>
@@ -334,6 +336,43 @@
       </div>
     </div>
 
+    <!-- MODAL GESTIONE GARE (ADMIN ONLY) -->
+    <div class="modal-backdrop" id="admin-matches-modal">
+      <div class="modal-box modal-large">
+        <div class="modal-header">
+          <h3>🏐 Gestione Gare & Pulizia Database</h3>
+          <button class="btn-close" id="btn-close-matches-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">
+              Elenco di tutte le gare archiviate nel database. Puoi rimuovere singole partite o svuotare l'intero archivio.
+            </p>
+            <button id="btn-clear-all-matches" class="btn btn-danger" style="font-size: 0.82rem; padding: 6px 12px;">⚠️ Svuota Tutte le Gare</button>
+          </div>
+          <div class="table-wrapper-small" style="max-height: 400px;">
+            <table class="simple-table" id="admin-matches-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Codice Gara</th>
+                  <th>Data</th>
+                  <th>Casa</th>
+                  <th>Ospite</th>
+                  <th>Set</th>
+                  <th>Eventi</th>
+                  <th>Azione</th>
+                </tr>
+              </thead>
+              <tbody id="admin-matches-tbody">
+                <tr><td colspan="8" class="empty-state">Nessuna partita presente nel database.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- MODAL 2: GESTIONE UTENTI (ADMIN ONLY) -->
     <div class="modal-backdrop" id="admin-users-modal">
       <div class="modal-box modal-large">
@@ -507,6 +546,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=3000.4"></script>
+  <script src="/static/app.js?v=3000.6"></script>
 </body>
 </html>

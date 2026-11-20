@@ -92,6 +92,14 @@ const btnOpenLoginsModal = document.getElementById("btn-open-logins-modal");
 const btnCloseLoginsModal = document.getElementById("btn-close-logins-modal");
 const loginsTbody = document.getElementById("logins-tbody");
 
+// Modals - Admin Matches
+const adminMatchesModal = document.getElementById("admin-matches-modal");
+const btnOpenMatchesModal = document.getElementById("btn-open-matches-modal");
+const btnCloseMatchesModal = document.getElementById("btn-close-matches-modal");
+const adminMatchesTbody = document.getElementById("admin-matches-tbody");
+const btnClearAllMatches = document.getElementById("btn-clear-all-matches");
+const btnQuickDeleteMatch = document.getElementById("btn-quick-delete-match");
+
 // --- INITIALIZATION ---
 document.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
@@ -209,9 +217,11 @@ function updateUserInterfaceForRole() {
 
   if (role === "ADMIN") {
     adminNavGroup.style.display = "flex";
+    btnQuickDeleteMatch.style.display = state.currentMatchId ? "inline-block" : "none";
   } else {
     // Utente SCOUT: nascondi comandi admin e upload
     adminNavGroup.style.display = "none";
+    btnQuickDeleteMatch.style.display = "none";
   }
 }
 
@@ -291,6 +301,18 @@ function setupEventListeners() {
 
   btnOpenLoginsModal.addEventListener("click", openAdminLoginsModal);
   btnCloseLoginsModal.addEventListener("click", () => adminLoginsModal.classList.remove("open"));
+
+  // Admin Matches Modal & Quick Delete
+  btnOpenMatchesModal.addEventListener("click", openAdminMatchesModal);
+  btnCloseMatchesModal.addEventListener("click", () => adminMatchesModal.classList.remove("open"));
+  btnClearAllMatches.addEventListener("click", clearAllMatches);
+  btnQuickDeleteMatch.addEventListener("click", () => {
+    if (state.currentMatchId) {
+      const currentMatch = state.matches.find(m => m.id === state.currentMatchId);
+      const code = currentMatch ? currentMatch.match_code : "selezionata";
+      deleteMatch(state.currentMatchId, code);
+    }
+  });
 }
 
 // --- MATCH DATA API & RENDER ---
@@ -331,12 +353,16 @@ function resetMatchDisplay() {
   awayTeamName.textContent = "--";
   awayTeamCode.textContent = "---";
   setsDisplay.innerHTML = '<span class="no-match-msg">Nessuna partita disponibile</span>';
-  eventsTbody.innerHTML = '<tr><td colspan="10" class="empty-state">Nessuna partita autorizzata.</td></tr>';
+  eventsTbody.innerHTML = '<tr><td colspan="10" class="empty-state">Nessuna partita disponibile.</td></tr>';
+  if (btnQuickDeleteMatch) btnQuickDeleteMatch.style.display = "none";
 }
 
 async function selectMatch(matchId) {
   state.currentMatchId = matchId;
   matchSelect.value = matchId;
+  if (btnQuickDeleteMatch && state.currentUser && state.currentUser.role === "ADMIN") {
+    btnQuickDeleteMatch.style.display = "inline-block";
+  }
   try {
     const [detailRes, eventsRes, logsRes] = await Promise.all([
       authFetch(`/api/matches/${matchId}`),
@@ -1005,6 +1031,97 @@ async function loadAdminLogins() {
     });
   } catch (err) {
     console.error("Errore caricamento log accessi:", err);
+  }
+}
+
+// --- ADMIN MATCHES MANAGEMENT ---
+async function openAdminMatchesModal() {
+  adminMatchesModal.classList.add("open");
+  await renderAdminMatchesTable();
+}
+
+async function renderAdminMatchesTable() {
+  adminMatchesTbody.innerHTML = '<tr><td colspan="8" class="empty-state">Caricamento partite...</td></tr>';
+  try {
+    const res = await authFetch("/api/matches");
+    if (!res.ok) throw new Error("Errore nel recupero delle partite");
+    const matches = await res.json();
+
+    if (!matches || matches.length === 0) {
+      adminMatchesTbody.innerHTML = '<tr><td colspan="8" class="empty-state">Nessuna partita presente nel database.</td></tr>';
+      return;
+    }
+
+    adminMatchesTbody.innerHTML = "";
+    matches.forEach(m => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><strong>#${m.id}</strong></td>
+        <td><code>${escapeHtml(m.match_code)}</code></td>
+        <td>${m.scheduled_date || "N.D."}</td>
+        <td>${escapeHtml(m.home_name || m.home_code || "-")}</td>
+        <td>${escapeHtml(m.away_name || m.away_code || "-")}</td>
+        <td>${m.sets_count || 0}</td>
+        <td>${m.events_count || 0}</td>
+        <td>
+          <button class="btn btn-danger btn-sm" onclick="deleteMatch(${m.id}, '${escapeHtml(m.match_code)}')">🗑️ Elimina</button>
+        </td>
+      `;
+      adminMatchesTbody.appendChild(tr);
+    });
+  } catch (err) {
+    adminMatchesTbody.innerHTML = `<tr><td colspan="8" class="empty-state" style="color:#ef4444;">${err.message}</td></tr>`;
+  }
+}
+
+async function deleteMatch(matchId, matchCode) {
+  if (!confirm(`Sei sicuro di voler eliminare la gara ${matchCode} (ID #${matchId}) e tutti i suoi dati dal database e dallo storage?`)) {
+    return;
+  }
+
+  try {
+    const res = await authFetch(`/api/matches/${matchId}`, { method: "DELETE" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Errore durante l'eliminazione");
+
+    await loadMatches();
+    if (adminMatchesModal.classList.contains("open")) {
+      await renderAdminMatchesTable();
+    }
+
+    if (state.currentMatchId === matchId) {
+      if (state.matches.length > 0) {
+        selectMatch(state.matches[0].id);
+      } else {
+        state.currentMatchId = null;
+        resetMatchDisplay();
+      }
+    }
+  } catch (err) {
+    alert("Errore eliminazione partita: " + err.message);
+  }
+}
+window.deleteMatch = deleteMatch;
+
+async function clearAllMatches() {
+  if (!confirm("ATTENZIONE: Sei sicuro di voler eliminare TUTTE le partite archiviate nel database e nello storage? Questa operazione è irreversibile!")) {
+    return;
+  }
+
+  try {
+    const res = await authFetch("/api/admin/matches/clear", { method: "DELETE" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Errore svuotamento partite");
+
+    await loadMatches();
+    if (adminMatchesModal.classList.contains("open")) {
+      await renderAdminMatchesTable();
+    }
+    state.currentMatchId = null;
+    resetMatchDisplay();
+    alert("Tutte le partite sono state eliminate con successo.");
+  } catch (err) {
+    alert("Errore svuotamento partite: " + err.message);
   }
 }
 
