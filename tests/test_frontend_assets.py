@@ -53,3 +53,10 @@ def test_admin_matches_management_modal_and_quick_delete():
     assert "deleteMatch" in js
     assert "clearAllMatches" in js
     assert "btnAdminDropdown" in js
+
+def test_match_select_dropdown_clean_formatting():
+    with open("static/app.js", "r", encoding="utf-8") as f:
+        js = f.read()
+
+    assert "populateMatchSelect" in js
+    assert "vs ${away} — ${m.match_code}" in js

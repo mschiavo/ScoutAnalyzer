@@ -370,7 +370,10 @@ function populateMatchSelect() {
   state.matches.forEach(m => {
     const opt = document.createElement("option");
     opt.value = m.id;
-    opt.textContent = `${m.match_code} - ${m.home_code} vs ${m.away_code} (${m.scheduled_date || "N.D."})`;
+    const home = m.home_name || m.home_code || "Casa";
+    const away = m.away_name || m.away_code || "Ospite";
+    const date = m.scheduled_date ? ` (${m.scheduled_date})` : "";
+    opt.textContent = `${home} vs ${away} — ${m.match_code}${date}`;
     matchSelect.appendChild(opt);
   });
 }
