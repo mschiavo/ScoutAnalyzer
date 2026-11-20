@@ -19,3 +19,5 @@ services:
         value: scoutanalyzer-dvw
       - key: JWT_SECRET_KEY
         generateValue: true
+      - key: DATABASE_URL
+        sync: false

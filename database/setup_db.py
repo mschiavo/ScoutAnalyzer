@@ -1,5 +1,9 @@
-import sqlite3
+import sys
 import os
+import sqlite3
+
+# Assicura che la radice del repository sia sempre in sys.path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 DB_PATH = "scoutanalyzer.db"
 
@@ -281,4 +285,9 @@ def create_database(db_path: str = DB_PATH):
     print(f"Database SQLite '{db_path}' inizializzato con successo con lo schema DDL unificato (16 tabelle).")
 
 if __name__ == "__main__":
-    create_database()
+    import os
+    if os.environ.get("DATABASE_URL"):
+        from scripts.migrate_sqlite_to_postgres import setup_and_seed_postgres
+        setup_and_seed_postgres()
+    else:
+        create_database()

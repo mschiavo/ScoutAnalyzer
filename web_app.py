@@ -12,20 +12,26 @@ from src.api.admin_routes import admin_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        from src.storage_manager import StorageManager
-        sm = StorageManager()
-        if sm.backend == "s3" and sm.s3_client:
-            sm.restore_database_from_storage()
+        from src.db import get_database_url
+        if not get_database_url():
+            from src.storage_manager import StorageManager
+            sm = StorageManager()
+            if sm.backend == "s3" and sm.s3_client:
+                sm.restore_database_from_storage()
     except Exception as e:
         print(f"Warning: restore_database_from_storage on startup: {e}")
 
     try:
-        from database.setup_db import create_database
-        from src.api.routes import get_db_path
-        db_p = get_db_path()
-        create_database(db_p)
+        from src.db import get_database_url
+        if get_database_url():
+            from scripts.migrate_sqlite_to_postgres import setup_and_seed_postgres
+            setup_and_seed_postgres()
+        else:
+            from database.setup_db import create_database
+            from src.db import get_sqlite_path
+            create_database(get_sqlite_path())
     except Exception as e:
-        print(f"Warning: create_database on startup failed: {e}")
+        print(f"Warning: database setup on startup failed: {e}")
     yield
 
 app = FastAPI(

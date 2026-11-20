@@ -14,32 +14,8 @@ admin_router = APIRouter(
     dependencies=[Depends(require_admin)]
 )
 
-DEFAULT_CONFIG_PATH = "config/config.json"
 SPECS_PATH = "config/datavalley_specs.json"
-
-def get_db_path() -> str:
-    env_path = os.environ.get("SCOUT_DB_PATH")
-    if env_path:
-        return env_path
-    if os.path.exists(DEFAULT_CONFIG_PATH):
-        try:
-            with open(DEFAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-                p = cfg.get("db_path", "scoutanalyzer.db")
-                if os.path.exists(p):
-                    return p
-        except Exception:
-            pass
-    root_candidate = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "scoutanalyzer.db")
-    if os.path.exists(root_candidate):
-        return root_candidate
-    return "scoutanalyzer.db"
-
-def get_db_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(get_db_path())
-    conn.execute("PRAGMA foreign_keys = ON;")
-    conn.row_factory = sqlite3.Row
-    return conn
+from src.db import get_db_connection, get_sqlite_path as get_db_path
 
 # --- PYDANTIC SCHEMAS ---
 class CreateUserRequest(BaseModel):

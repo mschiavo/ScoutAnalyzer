@@ -7,14 +7,12 @@ from typing import Dict, Any, Optional, List
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
+from src.db import get_db_connection
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "scoutanalyzer3000-jwt-secret-volleyball-key-2026")
 JWT_ALGORITHM = "HS256"
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
-
-def get_db_path() -> str:
-    return os.environ.get("SCOUT_DB_PATH", "scoutanalyzer.db")
 
 class User(BaseModel):
     id: int
@@ -88,11 +86,19 @@ def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_sch
     payload = verify_access_token(auth_token)
     user_id = int(payload.get("sub", 0))
 
-    conn = sqlite3.connect(get_db_path())
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute("SELECT id, username, email, role, is_active FROM users WHERE id = ?", (user_id,))
     row = c.fetchone()
-    if not row or row[4] != 1:
+    if not row:
+        conn.close()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Utente disabilitato o inesistente."
+        )
+
+    is_act = row[4] if isinstance(row, (tuple, list)) else row["is_active"]
+    if not is_act:
         conn.close()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -101,14 +107,19 @@ def get_current_user(request: Request, token: Optional[str] = Depends(oauth2_sch
 
     # Carica team_ids associati
     c.execute("SELECT team_id FROM user_teams WHERE user_id = ?", (user_id,))
-    team_ids = [r[0] for r in c.fetchall()]
+    team_ids = [r[0] if isinstance(r, (tuple, list)) else r["team_id"] for r in c.fetchall()]
     conn.close()
 
+    u_id = row[0] if isinstance(row, (tuple, list)) else row["id"]
+    u_name = row[1] if isinstance(row, (tuple, list)) else row["username"]
+    u_email = row[2] if isinstance(row, (tuple, list)) else row["email"]
+    u_role = row[3] if isinstance(row, (tuple, list)) else row["role"]
+
     return User(
-        id=row[0],
-        username=row[1],
-        email=row[2],
-        role=row[3],
+        id=u_id,
+        username=u_name,
+        email=u_email,
+        role=u_role,
         team_ids=team_ids
     )
 
