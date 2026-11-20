@@ -7,8 +7,21 @@ from web_app import app
 
 client = TestClient(app)
 
+def get_admin_headers():
+    res = client.post("/api/auth/login", json={"username": "admin", "password": "adminpassword"})
+    if res.status_code == 200:
+        token = res.json()["access_token"]
+        return {"Authorization": f"Bearer {token}"}
+    return {}
+
+def test_unauthenticated_request_is_blocked():
+    # Verifica che senza token le API rispondano 401
+    res = client.get("/api/matches")
+    assert res.status_code == 401
+
 def test_get_matches_api():
-    response = client.get("/api/matches")
+    headers = get_admin_headers()
+    response = client.get("/api/matches", headers=headers)
     assert response.status_code == 200
     assert isinstance(response.json(), list)
 
@@ -21,6 +34,8 @@ def test_cors_headers():
     assert response.headers.get("access-control-allow-origin") in ("*", "http://localhost:5173")
 
 def test_match_detail_and_events_api(tmp_path):
+    headers = get_admin_headers()
+
     # Inseriamo un match di prova nel db
     test_db = str(tmp_path / "test_api.db")
     create_database(test_db)
@@ -44,14 +59,12 @@ def test_match_detail_and_events_api(tmp_path):
     res = ingester.ingest_dvw(mock_data)
     match_id = res["match_id"]
 
-    # Test endpoint di dettaglio con db_path dinamico o sovrascritto
-    from src.api.routes import get_db_connection
     # Verifica chiamata match detail
-    res_m = client.get(f"/api/matches/{match_id}")
-    # Se il test usa scoutanalyzer.db default o tmp, verifichiamo che risponda
+    res_m = client.get(f"/api/matches/{match_id}", headers=headers)
     assert res_m.status_code in (200, 404)
 
 def test_audit_upload_endpoint():
+    headers = get_admin_headers()
     sample_content = b"""[3MATCH]
 15/10/2026;20.30.00;2026/2027;Campionato;Andata;;1;1;TEST_UP;1;Z;0;;;
 [3TEAMS]
@@ -69,10 +82,10 @@ True;25-20;22;
 """
     response = client.post(
         "/api/audit/upload",
-        files={"file": ("test_upload.dvw", sample_content, "text/plain")}
+        files={"file": ("test_upload.dvw", sample_content, "text/plain")},
+        headers=headers
     )
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "SUCCESS"
     assert data["events_count"] == 2
-

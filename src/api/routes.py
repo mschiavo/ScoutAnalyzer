@@ -2,13 +2,14 @@ import os
 import json
 import sqlite3
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, Query, Body, File, UploadFile
+from fastapi import APIRouter, HTTPException, Query, Body, File, UploadFile, Depends, Request
 from pydantic import BaseModel
 
 from src.dvw_parser import DVWParser
 from src.ingestion_manager import IngestionManager
 from src.state_engine import MatchStateEngine
 from src.roster_manager import RosterManager
+from src.api.auth import User, get_current_user, require_admin, verify_password, create_access_token
 
 router = APIRouter(prefix="/api", tags=["ScoutAnalyzer API"])
 
@@ -30,35 +31,144 @@ def get_db_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     return conn
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
 class AuditFileRequest(BaseModel):
     file_path: str
 
 class RosterSyncRequest(BaseModel):
     team_code: Optional[str] = None
 
-@router.get("/matches")
-def list_matches():
+def verify_match_access(match_id: int, current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role == "ADMIN":
+        return current_user
+
     conn = get_db_connection()
     c = conn.cursor()
+    c.execute("SELECT home_team_id, away_team_id FROM matches WHERE id = ?", (match_id,))
+    m_row = c.fetchone()
+    conn.close()
+
+    if not m_row:
+        raise HTTPException(status_code=404, detail="Partita non trovata.")
+
+    h_id = m_row["home_team_id"]
+    a_id = m_row["away_team_id"]
+    if h_id not in current_user.team_ids and a_id not in current_user.team_ids:
+        raise HTTPException(
+            status_code=403,
+            detail="Accesso negato: non sei autorizzato a consultare i dati di questa partita."
+        )
+    return current_user
+
+@router.post("/auth/login")
+def login(payload: LoginRequest, request: Request):
+    ip_addr = request.headers.get("X-Forwarded-For") or (request.client.host if request.client else "127.0.0.1")
+    user_agent = request.headers.get("User-Agent", "")
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, username, password_hash, email, role, is_active FROM users WHERE username = ?", (payload.username,))
+    row = c.fetchone()
+
+    if not row or not verify_password(payload.password, row["password_hash"]):
+        c.execute("""
+            INSERT INTO user_logins (user_id, username, ip_address, user_agent, login_status)
+            VALUES (?, ?, ?, ?, 'FAILED')
+        """, (row["id"] if row else None, payload.username, ip_addr, user_agent))
+        conn.commit()
+        conn.close()
+        raise HTTPException(status_code=401, detail="Nome utente o password non corretti.")
+
+    user_id = row["id"]
+    if row["is_active"] != 1:
+        c.execute("""
+            INSERT INTO user_logins (user_id, username, ip_address, user_agent, login_status)
+            VALUES (?, ?, ?, ?, 'FAILED')
+        """, (user_id, payload.username, ip_addr, user_agent))
+        conn.commit()
+        conn.close()
+        raise HTTPException(status_code=401, detail="Utenza disabilitata. Contatta l'amministratore.")
+
+    # Accesso riuscito
     c.execute("""
-        SELECT 
-            m.id, m.match_code, m.scheduled_date,
-            ht.code as home_code, ht.name as home_name,
-            at.code as away_code, at.name as away_name,
-            (SELECT COUNT(*) FROM match_sets ms WHERE ms.match_id = m.id) as sets_count,
-            (SELECT COUNT(*) FROM events e WHERE e.match_id = m.id) as events_count,
-            (SELECT COUNT(*) FROM validation_logs vl WHERE vl.match_id = m.id) as logs_count
-        FROM matches m
-        LEFT JOIN teams ht ON m.home_team_id = ht.id
-        LEFT JOIN teams at ON m.away_team_id = at.id
-        ORDER BY m.id DESC
-    """)
+        INSERT INTO user_logins (user_id, username, ip_address, user_agent, login_status)
+        VALUES (?, ?, ?, ?, 'SUCCESS')
+    """, (user_id, payload.username, ip_addr, user_agent))
+
+    # Carica squadre autorizzate
+    c.execute("SELECT team_id FROM user_teams WHERE user_id = ?", (user_id,))
+    team_ids = [r["team_id"] for r in c.fetchall()]
+
+    conn.commit()
+    conn.close()
+
+    is_local = ip_addr in ("127.0.0.1", "localhost", "::1")
+    token = create_access_token(user_id=user_id, username=row["username"], role=row["role"], is_local=is_local)
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user_id,
+            "username": row["username"],
+            "role": row["role"],
+            "email": row["email"],
+            "team_ids": team_ids
+        }
+    }
+
+@router.get("/auth/me")
+def get_me(current_user: User = Depends(get_current_user)):
+    return current_user.model_dump()
+
+@router.get("/matches")
+def list_matches(current_user: User = Depends(get_current_user)):
+    conn = get_db_connection()
+    c = conn.cursor()
+    if current_user.role == "ADMIN":
+        c.execute("""
+            SELECT 
+                m.id, m.match_code, m.scheduled_date, m.home_team_id, m.away_team_id,
+                ht.code as home_code, ht.name as home_name,
+                at.code as away_code, at.name as away_name,
+                (SELECT COUNT(*) FROM match_sets ms WHERE ms.match_id = m.id) as sets_count,
+                (SELECT COUNT(*) FROM events e WHERE e.match_id = m.id) as events_count,
+                (SELECT COUNT(*) FROM validation_logs vl WHERE vl.match_id = m.id) as logs_count
+            FROM matches m
+            LEFT JOIN teams ht ON m.home_team_id = ht.id
+            LEFT JOIN teams at ON m.away_team_id = at.id
+            ORDER BY m.id DESC
+        """)
+    else:
+        if not current_user.team_ids:
+            conn.close()
+            return []
+        placeholders = ",".join("?" for _ in current_user.team_ids)
+        query = f"""
+            SELECT 
+                m.id, m.match_code, m.scheduled_date, m.home_team_id, m.away_team_id,
+                ht.code as home_code, ht.name as home_name,
+                at.code as away_code, at.name as away_name,
+                (SELECT COUNT(*) FROM match_sets ms WHERE ms.match_id = m.id) as sets_count,
+                (SELECT COUNT(*) FROM events e WHERE e.match_id = m.id) as events_count,
+                (SELECT COUNT(*) FROM validation_logs vl WHERE vl.match_id = m.id) as logs_count
+            FROM matches m
+            LEFT JOIN teams ht ON m.home_team_id = ht.id
+            LEFT JOIN teams at ON m.away_team_id = at.id
+            WHERE m.home_team_id IN ({placeholders}) OR m.away_team_id IN ({placeholders})
+            ORDER BY m.id DESC
+        """
+        c.execute(query, current_user.team_ids + current_user.team_ids)
+
     rows = [dict(r) for r in c.fetchall()]
     conn.close()
     return rows
 
 @router.get("/matches/{match_id}")
-def get_match_detail(match_id: int):
+def get_match_detail(match_id: int, current_user: User = Depends(verify_match_access)):
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("""
@@ -123,7 +233,8 @@ def get_match_events(
     set_number: Optional[int] = Query(None, description="Filtra per numero di set"),
     only_errors: bool = Query(False, description="Filtra solo eventi con anomalie"),
     limit: int = Query(2500, ge=1, le=5000),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(verify_match_access)
 ):
     conn = get_db_connection()
     c = conn.cursor()
@@ -187,7 +298,7 @@ def get_match_events(
     return events
 
 @router.get("/matches/{match_id}/logs")
-def get_match_logs(match_id: int):
+def get_match_logs(match_id: int, current_user: User = Depends(verify_match_access)):
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("""
@@ -201,7 +312,7 @@ def get_match_logs(match_id: int):
     return rows
 
 @router.post("/audit/upload")
-async def audit_upload(file: UploadFile = File(...)):
+async def audit_upload(file: UploadFile = File(...), current_user: User = Depends(require_admin)):
     import tempfile
     suffix = os.path.splitext(file.filename)[1] or ".dvw"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -243,7 +354,7 @@ async def audit_upload(file: UploadFile = File(...)):
                 pass
 
 @router.post("/audit/file")
-def audit_file(payload: AuditFileRequest):
+def audit_file(payload: AuditFileRequest, current_user: User = Depends(require_admin)):
     file_path = payload.file_path.strip().strip('"')
     if not os.path.exists(file_path):
         raise HTTPException(status_code=400, detail=f"File non trovato sul filesystem: {file_path}")
@@ -277,7 +388,7 @@ def audit_file(payload: AuditFileRequest):
         raise HTTPException(status_code=500, detail=f"Errore durante l'audit del file: {str(e)}")
 
 @router.post("/rosters/sync")
-def sync_rosters(payload: Optional[RosterSyncRequest] = None):
+def sync_rosters(payload: Optional[RosterSyncRequest] = None, current_user: User = Depends(require_admin)):
     try:
         mgr = RosterManager()
         if payload and payload.team_code:
