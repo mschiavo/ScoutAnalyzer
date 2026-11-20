@@ -1,9 +1,9 @@
 import json
-import sqlite3
 import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from src.models.validation_issue import ValidationIssue, Severity
+from src.db import get_db_connection, get_sqlite_path
 
 class HeaderValidator:
     """Validatore di integrità dell'intestazione e del roster per file scout Data Volley (.dvw).
@@ -93,7 +93,7 @@ class HeaderValidator:
         home_code = self.parsed_data.get("teams", {}).get("home_code")
         away_code = self.parsed_data.get("teams", {}).get("away_code")
 
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection(self.db_path)
         cursor = conn.cursor()
 
         for code, role in [(home_code, "Casa (*)"), (away_code, "Ospite (a)")]:
@@ -119,7 +119,7 @@ class HeaderValidator:
 
     def validate_rosters_and_players(self):
         """Validazione delle sezioni [3PLAYERS-H] e [3PLAYERS-V] rispetto al DB ufficiale."""
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection(self.db_path)
         cursor = conn.cursor()
 
         # Carica mappa ruoli { role_id: dv_role_code }

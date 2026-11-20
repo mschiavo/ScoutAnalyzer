@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ScoutAnalyzer 3000 - Volleyball Scout & Lineup Auditor</title>
-  <link rel="stylesheet" href="/static/style.css?v=3000.9">
+  <link rel="stylesheet" href="/static/style.css?v=3000.10">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏐</text></svg>">
 </head>
 <body>
@@ -285,8 +285,8 @@
         <div class="modal-body">
           <div class="upload-box">
             <span style="font-size: 1.8rem;">📁</span>
-            <p style="margin: 6px 0 10px; font-size: 0.9rem;"><strong>Seleziona un file .dvw dal tuo computer:</strong></p>
-            <input type="file" id="audit-file-input" accept=".dvw" />
+            <p id="upload-file-label" style="margin: 6px 0 10px; font-size: 0.9rem;"><strong>Seleziona uno o più file .dvw dal tuo computer:</strong></p>
+            <input type="file" id="audit-file-input" accept=".dvw" multiple />
           </div>
           <div class="divider-text">OPPURE TRAMITE PERCORSO FILE</div>
           <p style="font-size: 0.85rem; margin-top: 6px;">Inserisci il percorso assoluto sul filesystem:</p>
@@ -553,6 +553,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=3000.9"></script>
+  <script src="/static/app.js?v=3000.10"></script>
 </body>
 </html>

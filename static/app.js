@@ -260,16 +260,22 @@ function setupEventListeners() {
   btnCloseAuditModal.addEventListener("click", () => auditModal.classList.remove("open"));
   btnCancelAudit.addEventListener("click", () => auditModal.classList.remove("open"));
   btnRunAudit.addEventListener("click", () => {
-    if (auditFileInput && auditFileInput.files && auditFileInput.files[0]) {
-      uploadAndAuditFile(auditFileInput.files[0]);
+    if (auditFileInput && auditFileInput.files && auditFileInput.files.length > 0) {
+      uploadAndAuditFiles(auditFileInput.files);
     } else {
       runAuditFile();
     }
   });
   if (auditFileInput) {
     auditFileInput.addEventListener("change", (e) => {
-      if (e.target.files && e.target.files[0]) {
-        autoDetectMatchHierarchy(e.target.files[0].name);
+      const files = e.target.files;
+      const lbl = document.getElementById("upload-file-label");
+      if (files && files.length === 1) {
+        if (lbl) lbl.innerHTML = `<strong>File selezionato:</strong> <code>${escapeHtml(files[0].name)}</code>`;
+        autoDetectMatchHierarchy(files[0].name);
+      } else if (files && files.length > 1) {
+        if (lbl) lbl.innerHTML = `<strong>Selezionati ${files.length} file .dvw</strong> per l'audit cumulativo.`;
+        autoDetectMatchHierarchy(files[0].name);
       }
     });
   }
@@ -393,7 +399,8 @@ async function selectMatch(matchId) {
     ]);
 
     if (!detailRes.ok) {
-      alert("Accesso negato o partita non disponibile.");
+      const err = await detailRes.json().catch(() => ({}));
+      alert("Errore caricamento dettagli partita: " + (err.detail || detailRes.statusText));
       return;
     }
 
@@ -658,55 +665,69 @@ function autoDetectMatchHierarchy(filename) {
   }
 }
 
-async function uploadAndAuditFile(file) {
-  if (!file) return;
+async function uploadAndAuditFiles(fileList) {
+  if (!fileList || fileList.length === 0) return;
+
+  const files = Array.from(fileList);
+  btnRunAudit.disabled = true;
 
   const camp = document.getElementById("upload-campionato").value.trim() || "2026-2027";
   const cat = document.getElementById("upload-categoria").value || "B1F";
   const gir = document.getElementById("upload-girone").value.trim() || "B";
   const gio = document.getElementById("upload-giornata").value.trim() || "01";
 
-  auditStatus.innerHTML = `<span style="color:#38bdf8;">⏳ Caricamento e audit di <b>${escapeHtml(file.name)}</b> in corso...</span>`;
-  btnRunAudit.disabled = true;
+  let successCount = 0;
+  let failCount = 0;
+  let lastMatchId = null;
 
-  try {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("campionato", camp);
-    formData.append("categoria", cat);
-    formData.append("girone", gir);
-    formData.append("giornata", gio);
-
-    const res = await authFetch("/api/audit/upload", {
-      method: "POST",
-      body: formData
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || "Errore durante il caricamento");
-    }
-
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
     auditStatus.innerHTML = `
-      <div style="color:#10b981; font-weight:bold;">✅ Audit completato con successo!</div>
-      <div style="margin-top:6px; color:#cbd5e1;">
-        Partita: <b>${data.match_code}</b> | Storage: <code>${data.storage_path || "--"}</code><br>
-        Eventi: ${data.events_count} | Set: ${data.sets_count} | Violazioni: ${data.syntax_issues_count + data.state_issues_count}
-      </div>
+      <span style="color:#38bdf8;">
+        ⏳ Caricamento e audit (${i + 1}/${files.length}): <b>${escapeHtml(file.name)}</b>...
+      </span>
     `;
 
-    await loadMatches();
-    selectMatch(data.match_id);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("campionato", camp);
+      formData.append("categoria", cat);
+      formData.append("girone", gir);
+      formData.append("giornata", gio);
 
-    setTimeout(() => {
-      auditModal.classList.remove("open");
-      btnRunAudit.disabled = false;
-    }, 1800);
+      const res = await authFetch("/api/audit/upload", {
+        method: "POST",
+        body: formData
+      });
 
-  } catch (err) {
-    auditStatus.innerHTML = `<span style="color:#ef4444;">❌ ${err.message}</span>`;
-    btnRunAudit.disabled = false;
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || "Errore durante il caricamento");
+      }
+      successCount++;
+      lastMatchId = data.match_id;
+    } catch (err) {
+      console.error(`Errore upload ${file.name}:`, err);
+      failCount++;
+    }
   }
+
+  auditStatus.innerHTML = `
+    <div style="color:#10b981; font-weight:bold;">
+      ✅ Completato! ${successCount} file caricati con successo${failCount > 0 ? `, <span style="color:#ef4444;">${failCount} errori</span>` : ""}.
+    </div>
+  `;
+
+  await loadMatches();
+  if (lastMatchId) {
+    selectMatch(lastMatchId);
+  }
+
+  setTimeout(() => {
+    auditModal.classList.remove("open");
+    btnRunAudit.disabled = false;
+  }, 2200);
 }
 
 async function runAuditFile() {

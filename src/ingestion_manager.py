@@ -1,7 +1,7 @@
-import sqlite3
 import json
 import os
 from typing import Dict, Any, List, Optional
+from src.db import get_db_connection
 
 DEFAULT_CONFIG_PATH = "config/config.json"
 
@@ -18,7 +18,7 @@ class IngestionManager:
 
     def ingest_dvw(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
         """Ingestione completa dei dati nel database con persistenza delle validazioni sintattiche."""
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
@@ -127,7 +127,7 @@ class IngestionManager:
                     away_setter_pos,
                     h_pos[0], h_pos[1], h_pos[2], h_pos[3], h_pos[4], h_pos[5],
                     a_pos[0], a_pos[1], a_pos[2], a_pos[3], a_pos[4], a_pos[5],
-                    is_valid,
+                    bool(is_valid),
                     error_note
                 ))
 

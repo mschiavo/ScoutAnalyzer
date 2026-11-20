@@ -1,11 +1,11 @@
 import os
 import shutil
-import sqlite3
 import hashlib
 import json
 import requests
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+from src.db import get_db_connection, get_sqlite_path
 
 DEFAULT_CONFIG_PATH = "config/config.json"
 
@@ -17,8 +17,7 @@ class RosterManager:
         self.config_path = config_path
         self.config = self._load_config()
 
-        from src.api.routes import get_db_path
-        self.db_path = get_db_path()
+        self.db_path = get_sqlite_path()
 
         from src.storage_manager import StorageManager
         self.storage = storage_manager or StorageManager()
@@ -48,7 +47,7 @@ class RosterManager:
         """Scarica il file .sq ufficiale da Volley Network.
         Esegue il backup con timestamp solo ed esclusivamente se il file scaricato differisce da quello locale.
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection(self.db_path)
         cursor = conn.cursor()
         cursor.execute("SELECT roster_code, name FROM teams WHERE code = ?", (team_code,))
         team = cursor.fetchone()
@@ -98,7 +97,7 @@ class RosterManager:
 
     def download_all_rosters(self) -> List[Dict[str, Any]]:
         """Scarica il file roster per tutte le squadre censite con un roster_code valido."""
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection(self.db_path)
         cursor = conn.cursor()
         cursor.execute("SELECT code FROM teams WHERE roster_code IS NOT NULL AND roster_code != ''")
         teams = cursor.fetchall()
@@ -116,7 +115,7 @@ class RosterManager:
         """
         today_str = execution_date or datetime.now().strftime("%Y-%m-%d")
 
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection(self.db_path)
         cursor = conn.cursor()
 
         # Mappa ruoli { dv_role_code: role_id }
@@ -216,7 +215,7 @@ class RosterManager:
 
     def sync_all_rosters_to_db(self) -> List[Dict[str, Any]]:
         """Aggiorna il database per tutte le squadre con file .sq disponibili."""
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection(self.db_path)
         cursor = conn.cursor()
         cursor.execute("SELECT code FROM teams WHERE roster_code IS NOT NULL AND roster_code != ''")
         teams = cursor.fetchall()

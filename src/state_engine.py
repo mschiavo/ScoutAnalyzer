@@ -1,7 +1,7 @@
 import os
-import sqlite3
 import json
 from typing import Dict, List, Any, Optional
+from src.db import get_db_connection
 
 DEFAULT_CONFIG_PATH = "config/config.json"
 
@@ -36,7 +36,7 @@ class MatchStateEngine:
                 pass
 
     def process_match(self) -> Dict[str, Any]:
-        conn = sqlite3.connect(self.db_path)
+        conn = get_db_connection(self.db_path)
         cursor = conn.cursor()
 
         try:

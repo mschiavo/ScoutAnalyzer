@@ -45,6 +45,19 @@ def get_sqlite_path() -> str:
     return "scoutanalyzer.db"
 
 
+class DbRow(dict):
+    """Oggetto riga che supporta sia l'accesso per chiave dizionario (r['name'])
+    sia l'accesso per indice numerico (r[0]), identico al comportamento di sqlite3.Row."""
+    def __init__(self, cols, vals):
+        super().__init__(zip(cols, vals))
+        self._vals = tuple(vals)
+
+    def __getitem__(self, item):
+        if isinstance(item, int):
+            return self._vals[item]
+        return super().__getitem__(item)
+
+
 class PostgresCursorWrapper:
     """Wrapper per il cursore psycopg per garantire la compatibilità con l'API sqlite3."""
     def __init__(self, raw_cursor):
@@ -54,6 +67,14 @@ class PostgresCursorWrapper:
     @property
     def rowcount(self):
         return self._cur.rowcount
+
+    def _wrap_row(self, row):
+        if row is None:
+            return None
+        if self._cur.description:
+            cols = [d.name for d in self._cur.description]
+            return DbRow(cols, row)
+        return row
 
     def _convert_query(self, sql: str) -> Optional[str]:
         q = sql.strip()
@@ -106,13 +127,19 @@ class PostgresCursorWrapper:
         return self
 
     def fetchone(self):
-        return self._cur.fetchone()
+        row = self._cur.fetchone()
+        return self._wrap_row(row)
 
     def fetchall(self):
-        return self._cur.fetchall()
+        rows = self._cur.fetchall()
+        if not rows:
+            return []
+        cols = [d.name for d in self._cur.description] if self._cur.description else []
+        return [DbRow(cols, r) for r in rows]
 
     def __iter__(self):
-        return iter(self._cur)
+        for r in self._cur:
+            yield self._wrap_row(r)
 
     def close(self):
         self._cur.close()
@@ -150,10 +177,8 @@ def get_db_connection(db_path: Optional[str] = None) -> Any:
     if pg_url:
         try:
             import psycopg
-            from psycopg.rows import dict_row
-            # Normalizzazione prefisso postgresql:// se necessario
             clean_url = pg_url.replace("postgres://", "postgresql://")
-            raw_conn = psycopg.connect(clean_url, row_factory=dict_row)
+            raw_conn = psycopg.connect(clean_url)
             return PostgresConnectionWrapper(raw_conn)
         except Exception as e:
             logger.warning(f"[DB] Errore connessione a PostgreSQL ({e}), fallback su SQLite locale.")
