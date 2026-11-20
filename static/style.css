@@ -31,13 +31,15 @@ body {
   background-color: var(--bg-main);
   color: var(--text-main);
   line-height: 1.5;
-  overflow-x: hidden;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .app-container {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* TOP HEADER */
@@ -278,16 +280,19 @@ select:focus, input[type="text"]:focus {
 /* DASHBOARD MAIN GRID */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 340px 1fr;
-  gap: 20px;
-  padding: 16px 24px;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+  padding: 12px 20px;
   flex: 1;
+  min-height: 0;
   align-items: start;
+  overflow: hidden;
 }
 
 @media (max-width: 1050px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
+    overflow-y: auto;
   }
 }
 
@@ -300,23 +305,28 @@ select:focus, input[type="text"]:focus {
 }
 
 .court-panel {
-  position: sticky;
-  top: 14px;
-  overflow: hidden;
+  overflow: hidden !important;
   height: fit-content;
   max-height: none;
+  flex-shrink: 0;
+}
+
+.events-panel {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .court-panel .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border-color);
 }
 
 .court-panel .panel-header h3 {
-  font-size: 0.88rem;
+  font-size: 0.85rem;
   font-weight: 700;
 }
 
@@ -324,23 +334,23 @@ select:focus, input[type="text"]:focus {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 18px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border-color);
 }
 
 .panel-header h3 {
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 700;
 }
 
 .active-event-caption, #events-count-label {
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 
 /* VOLLEYBALL COURT SVG */
 .court-container {
-  padding: 8px 12px;
+  padding: 6px 10px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -348,7 +358,7 @@ select:focus, input[type="text"]:focus {
 
 .court-svg {
   width: 100%;
-  max-width: 310px;
+  max-width: 290px;
   height: auto;
 }
 
@@ -462,7 +472,8 @@ select:focus, input[type="text"]:focus {
 /* TABLE PLAY-BY-PLAY */
 .table-wrapper {
   overflow-y: auto;
-  max-height: calc(100vh - 270px);
+  flex: 1;
+  min-height: 0;
 }
 
 .events-table {
