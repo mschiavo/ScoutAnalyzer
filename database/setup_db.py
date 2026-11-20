@@ -74,6 +74,8 @@ CREATE TABLE IF NOT EXISTS matches (
     away_team_id INTEGER NOT NULL,
     scheduled_date TEXT,
     status TEXT DEFAULT 'PENDING',   -- PENDING, VALIDATED, ERROR
+    storage_path TEXT,               -- Percorso relativo nello storage gestito o key cloud
+    file_hash TEXT,                  -- Hash MD5/SHA-256 del file DVW per verifica integrità
     FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL,
     FOREIGN KEY (home_team_id) REFERENCES teams(id) ON DELETE CASCADE,
     FOREIGN KEY (away_team_id) REFERENCES teams(id) ON DELETE CASCADE
@@ -183,10 +185,48 @@ CREATE TABLE IF NOT EXISTS validation_logs (
 CREATE INDEX IF NOT EXISTS idx_events_match ON events(match_id, set_id, event_index);
 CREATE INDEX IF NOT EXISTS idx_rotations_match ON rotations(match_id, set_id);
 CREATE INDEX IF NOT EXISTS idx_logs_match ON validation_logs(match_id, line_number);
+
+-- 14. Tabella Utenti
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    email TEXT UNIQUE,
+    role TEXT CHECK(role IN ('ADMIN', 'SCOUT')) DEFAULT 'SCOUT',
+    is_active BOOLEAN DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 15. Tabella Associazioni Utente - Squadre Autorizzate (Multi-Tenancy)
+CREATE TABLE IF NOT EXISTS user_teams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+    UNIQUE(user_id, team_id)
+);
+
+-- 16. Tabella Tracciamento Accessi / Audit Login
+CREATE TABLE IF NOT EXISTS user_logins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    username TEXT NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    login_status TEXT CHECK(login_status IN ('SUCCESS', 'FAILED')) DEFAULT 'SUCCESS',
+    logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_teams_user ON user_teams(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_logins_user ON user_logins(user_id, logged_at);
 """
 
 def create_database(db_path: str = DB_PATH):
-    """Inizializza o aggiorna il database unificato con tutte le 12 tabelle relazionali."""
+    """Inizializza o aggiorna il database unificato con tutte le 16 tabelle relazionali."""
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     cursor.executescript(SCHEMA_DDL)
@@ -206,6 +246,14 @@ def create_database(db_path: str = DB_PATH):
         if col_name not in existing_cols:
             cursor.execute(f"ALTER TABLE events ADD COLUMN {col_name} {col_type}")
 
+    # Migrazione colonne per matches (storage_path, file_hash)
+    cursor.execute("PRAGMA table_info(matches)")
+    m_cols = {r[1] for r in cursor.fetchall()}
+    if "storage_path" not in m_cols:
+        cursor.execute("ALTER TABLE matches ADD COLUMN storage_path TEXT")
+    if "file_hash" not in m_cols:
+        cursor.execute("ALTER TABLE matches ADD COLUMN file_hash TEXT")
+
     # Inserimento ruoli standard pallavolo se non presenti
     standard_roles = [
         ("L", "Libero", "1"),
@@ -218,9 +266,19 @@ def create_database(db_path: str = DB_PATH):
         INSERT OR IGNORE INTO roles (code, name, dv_role_code) VALUES (?, ?, ?)
     """, standard_roles)
 
+    # Seeding utente admin predefinito se assente
+    cursor.execute("SELECT id FROM users WHERE username = 'admin'")
+    if not cursor.fetchone():
+        import bcrypt
+        admin_pwd_hash = bcrypt.hashpw(b"adminpassword", bcrypt.gensalt()).decode("utf-8")
+        cursor.execute("""
+            INSERT INTO users (username, password_hash, email, role, is_active)
+            VALUES (?, ?, ?, 'ADMIN', 1)
+        """, ("admin", admin_pwd_hash, "admin@scoutanalyzer.local"))
+
     conn.commit()
     conn.close()
-    print(f"Database SQLite '{db_path}' inizializzato con successo con lo schema DDL unificato (12 tabelle).")
+    print(f"Database SQLite '{db_path}' inizializzato con successo con lo schema DDL unificato (16 tabelle).")
 
 if __name__ == "__main__":
     create_database()
