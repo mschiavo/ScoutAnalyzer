@@ -148,15 +148,12 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE TABLE IF NOT EXISTS validation_logs (
     id SERIAL PRIMARY KEY,
     match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-    set_id INTEGER REFERENCES match_sets(id) ON DELETE CASCADE,
-    event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
-    severity TEXT NOT NULL,
-    issue_type TEXT NOT NULL,
-    description TEXT NOT NULL,
+    file_name TEXT,
+    line_number INTEGER,
     raw_code TEXT,
-    line_num INTEGER,
-    resolved BOOLEAN DEFAULT FALSE,
-    resolved_notes TEXT
+    parsed_status TEXT,
+    error_summary TEXT,
+    validated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -206,6 +203,11 @@ def setup_and_seed_postgres():
                 ALTER TABLE events ADD COLUMN IF NOT EXISTS error_note TEXT;
                 ALTER TABLE rotations ADD COLUMN IF NOT EXISTS home_libero_pos INTEGER;
                 ALTER TABLE rotations ADD COLUMN IF NOT EXISTS away_libero_pos INTEGER;
+                ALTER TABLE validation_logs ADD COLUMN IF NOT EXISTS file_name TEXT;
+                ALTER TABLE validation_logs ADD COLUMN IF NOT EXISTS line_number INTEGER;
+                ALTER TABLE validation_logs ADD COLUMN IF NOT EXISTS parsed_status TEXT;
+                ALTER TABLE validation_logs ADD COLUMN IF NOT EXISTS error_summary TEXT;
+                ALTER TABLE validation_logs ADD COLUMN IF NOT EXISTS validated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
             """)
             pg_conn.commit()
             print("✅ Schema 16 tabelle e indici verificati su Neon PostgreSQL.")

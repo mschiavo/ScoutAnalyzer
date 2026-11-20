@@ -90,6 +90,10 @@ class PostgresCursorWrapper:
 
         # Conversione dei placeholder da '?' (SQLite) a '%s' (PostgreSQL psycopg)
         q = q.replace("?", "%s")
+
+        # Conversione confronti booleani per PostgreSQL
+        q = re.sub(r'\be\.is_valid\s*=\s*0\b', 'e.is_valid = FALSE', q, flags=re.IGNORECASE)
+        q = re.sub(r'\be\.is_valid\s*=\s*1\b', 'e.is_valid = TRUE', q, flags=re.IGNORECASE)
         return q
 
     def execute(self, sql: str, params=None):

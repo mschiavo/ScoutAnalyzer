@@ -351,8 +351,8 @@ async def audit_upload(
     try:
         parser = DVWParser(tmp_path)
         parsed = parser.parse()
-        if not parsed.get("match_info", {}).get("match_code") or parsed["match_info"]["match_code"] == "UNKNOWN_MATCH":
-            parsed["match_info"]["match_code"] = os.path.splitext(file.filename)[0]
+        clean_code = os.path.splitext(file.filename)[0]
+        parsed["match_info"]["match_code"] = clean_code
 
         ingester = IngestionManager()
         ingest_res = ingester.ingest_dvw(parsed)
