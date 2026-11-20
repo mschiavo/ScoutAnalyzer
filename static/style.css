@@ -662,3 +662,219 @@ select:focus, input[type="text"]:focus {
   margin-top: 14px;
   font-size: 0.85rem;
 }
+
+/* LOGIN GATE OVERLAY */
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at center, #1b2842 0%, #0a0d17 100%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.login-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 32px 36px;
+  width: 90%;
+  max-width: 420px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+.login-brand {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.login-logo {
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.login-brand h2 {
+  font-size: 1.45rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.5px;
+}
+
+.login-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  margin-bottom: 6px;
+}
+
+.form-group input, .form-group select {
+  width: 100%;
+}
+
+.btn-block {
+  width: 100%;
+  padding: 10px;
+  font-size: 0.95rem;
+  margin-top: 8px;
+}
+
+.btn-danger {
+  background-color: rgba(239, 68, 68, 0.85);
+  color: #fff;
+}
+.btn-danger:hover {
+  background-color: #dc2626;
+}
+
+.login-error {
+  color: #f87171;
+  font-size: 0.82rem;
+  margin-bottom: 12px;
+  min-height: 20px;
+  font-weight: 600;
+}
+
+.login-footer {
+  margin-top: 20px;
+  text-align: center;
+  border-top: 1px solid var(--border-color);
+  padding-top: 14px;
+  color: var(--text-muted);
+}
+
+/* HEADER USER & ADMIN CONTROLS */
+.admin-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background-color: var(--bg-card-alt);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #38bdf8;
+}
+
+/* LARGE MODALS & ADMIN PANELS */
+.modal-large {
+  max-width: 960px;
+  max-height: 90vh;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 800px) {
+  .admin-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.teams-checkbox-list {
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px;
+  background-color: var(--bg-main);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.team-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  color: #e2e8f0;
+}
+
+.table-wrapper-small {
+  overflow-y: auto;
+  max-height: 340px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.simple-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.simple-table th {
+  background-color: var(--bg-card-alt);
+  padding: 8px 10px;
+  text-align: left;
+  color: var(--text-muted);
+  position: sticky;
+  top: 0;
+}
+
+.simple-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+  color: #e2e8f0;
+}
+
+.add-rule-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.add-rule-form label {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.add-rule-form input, .add-rule-form select {
+  width: 100%;
+  font-size: 0.82rem;
+  padding: 6px 8px;
+}
+
+.upload-box {
+  background: rgba(59, 130, 246, 0.08);
+  border: 2px dashed var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  margin-bottom: 14px;
+}
+
+.divider-text {
+  text-align: center;
+  margin: 8px 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}

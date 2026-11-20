@@ -4,11 +4,37 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ScoutAnalyzer 3000 - Volleyball Scout & Lineup Auditor</title>
-  <link rel="stylesheet" href="/static/style.css?v=3000.1">
+  <link rel="stylesheet" href="/static/style.css?v=3000.2">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏐</text></svg>">
 </head>
 <body>
-  <div class="app-container">
+  <!-- LOGIN GATE OVERLAY (Visible when not authenticated) -->
+  <div class="login-overlay" id="login-overlay">
+    <div class="login-card">
+      <div class="login-brand">
+        <span class="login-logo">🏐</span>
+        <h2>ScoutAnalyzer 3000</h2>
+        <p class="login-subtitle">Piattaforma Professionale di Audit & Analisi Scout</p>
+      </div>
+      <form id="login-form">
+        <div class="form-group">
+          <label for="login-username">Nome Utente</label>
+          <input type="text" id="login-username" required placeholder="Inserisci username..." autocomplete="username" />
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" required placeholder="Inserisci password..." autocomplete="current-password" />
+        </div>
+        <div class="login-error" id="login-error"></div>
+        <button type="submit" id="btn-login" class="btn btn-primary btn-block">Accedi alla Piattaforma</button>
+      </form>
+      <div class="login-footer">
+        <small>Credenziali iniziali amministratore: <code>admin</code> / <code>adminpassword</code></small>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-container" id="app-container" style="display: none;">
     <!-- TOP HEADER -->
     <header class="app-header">
       <div class="brand">
@@ -25,8 +51,22 @@
             <option value="">Caricamento partite...</option>
           </select>
         </div>
-        <button id="btn-open-audit-modal" class="btn btn-primary">➕ Nuovo Audit .DVW</button>
-        <button id="btn-sync-rosters" class="btn btn-secondary">🔄 Sincronizza Roster</button>
+
+        <!-- ADMIN CONTROLS (Solo per ruolo ADMIN) -->
+        <div id="admin-nav-group" class="admin-nav-group">
+          <button id="btn-open-users-modal" class="btn btn-secondary">👥 Utenti</button>
+          <button id="btn-open-rules-modal" class="btn btn-secondary">⚙️ Regole</button>
+          <button id="btn-open-logins-modal" class="btn btn-secondary">📋 Accessi</button>
+          <button id="btn-open-audit-modal" class="btn btn-primary">➕ Nuovo Audit .DVW</button>
+          <button id="btn-sync-rosters" class="btn btn-secondary">🔄 Roster</button>
+        </div>
+
+        <!-- USER BADGE & LOGOUT -->
+        <div class="user-badge" id="user-badge">
+          <span class="user-icon">👤</span>
+          <span id="user-display">--</span>
+        </div>
+        <button id="btn-logout" class="btn btn-danger">Esci</button>
       </div>
     </header>
 
@@ -39,7 +79,6 @@
       </div>
 
       <div class="sets-display" id="sets-display">
-        <!-- Parziali dei set inseriti dinamicamente -->
         <span class="no-match-msg">Seleziona una partita per visualizzare i dettagli</span>
       </div>
 
@@ -87,109 +126,45 @@
         </div>
 
         <div class="court-container" id="court-container">
-          <!-- Campo SVG interattivo orientato verticalmente -->
-          <svg class="court-svg" id="court-svg" viewBox="0 0 420 740" preserveAspectRatio="xMidYMid meet">
+          <!-- Campo SVG interattivo -->
+          <svg class="court-svg" id="court-svg" viewBox="0 0 900 460" preserveAspectRatio="xMidYMid meet">
             <!-- Sfondo del campo -->
-            <rect x="20" y="20" width="380" height="700" rx="12" class="court-boundary" />
-            <rect x="30" y="30" width="360" height="680" class="court-floor" />
+            <rect x="20" y="20" width="860" height="420" rx="12" class="court-boundary" />
+            <rect x="30" y="30" width="840" height="400" class="court-floor" />
             
-            <!-- Rete centrale orizzontale -->
-            <line x1="15" y1="370" x2="405" y2="370" class="court-net" />
-            <text x="210" y="365" class="net-label" text-anchor="middle">─── RETE ───</text>
+            <!-- Rete centrale -->
+            <line x1="450" y1="20" x2="450" y2="440" class="court-net" />
+            <text x="450" y="16" class="net-label" text-anchor="middle">RETE</text>
 
             <!-- Linee di attacco (3 metri) -->
-            <line x1="30" y1="260" x2="390" y2="260" class="court-line-3m" />
-            <line x1="30" y1="480" x2="390" y2="480" class="court-line-3m" />
+            <line x1="310" y1="30" x2="310" y2="430" class="court-line-3m" />
+            <line x1="590" y1="30" x2="590" y2="430" class="court-line-3m" />
 
             <!-- Nomi squadre a bordo campo -->
-            <text x="210" y="55" class="court-team-title" id="court-away-title">OSPITE (a)</text>
-            <text x="210" y="695" class="court-team-title" id="court-home-title">CASA (*)</text>
+            <text x="170" y="55" class="court-team-title" id="court-home-title">CASA (*)</text>
+            <text x="730" y="55" class="court-team-title" id="court-away-title">OSPITE (a)</text>
 
-            <!-- ZONA OSPITE (Metà Superiore) -->
-            <!-- Seconda Linea: Z1 (sinistra), Z6 (centro), Z5 (destra) -->
-            <g id="a-zone-1" class="player-node" transform="translate(80, 130)">
-              <circle r="26" />
-              <text class="z-label" y="-32">Z1 (Battuta)</text>
-              <text class="p-num" y="7">?</text>
-              <text class="p-name" y="42"></text>
-            </g>
-            <g id="a-zone-6" class="player-node" transform="translate(210, 130)">
-              <circle r="26" />
-              <text class="z-label" y="-32">Z6</text>
-              <text class="p-num" y="7">?</text>
-              <text class="p-name" y="42"></text>
-            </g>
-            <g id="a-zone-5" class="player-node" transform="translate(340, 130)">
-              <circle r="26" />
-              <text class="z-label" y="-32">Z5</text>
-              <text class="p-num" y="7">?</text>
-              <text class="p-name" y="42"></text>
-            </g>
-            <!-- Prima Linea: Z2 (sinistra), Z3 (centro), Z4 (destra) -->
-            <g id="a-zone-2" class="player-node" transform="translate(80, 295)">
-              <circle r="26" />
-              <text class="z-label" y="-32">Z2</text>
-              <text class="p-num" y="7">?</text>
-              <text class="p-name" y="42"></text>
-            </g>
-            <g id="a-zone-3" class="player-node" transform="translate(210, 295)">
-              <circle r="26" />
-              <text class="z-label" y="-32">Z3</text>
-              <text class="p-num" y="7">?</text>
-              <text class="p-name" y="42"></text>
-            </g>
-            <g id="a-zone-4" class="player-node" transform="translate(340, 295)">
-              <circle r="26" />
-              <text class="z-label" y="-32">Z4</text>
-              <text class="p-num" y="7">?</text>
-              <text class="p-name" y="42"></text>
-            </g>
+            <!-- ZONA CASA (Metà Sinistra) -->
+            <g id="h-zone-4" class="player-node" transform="translate(360, 100)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z4</text></g>
+            <g id="h-zone-3" class="player-node" transform="translate(360, 230)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z3</text></g>
+            <g id="h-zone-2" class="player-node" transform="translate(360, 360)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z2</text></g>
+            <g id="h-zone-5" class="player-node" transform="translate(140, 100)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z5</text></g>
+            <g id="h-zone-6" class="player-node" transform="translate(140, 230)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z6</text></g>
+            <g id="h-zone-1" class="player-node" transform="translate(140, 360)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z1 (Battuta)</text></g>
 
-            <!-- ZONA CASA (Metà Inferiore) -->
-            <!-- Prima Linea: Z4 (sinistra), Z3 (centro), Z2 (destra) -->
-            <g id="h-zone-4" class="player-node" transform="translate(80, 445)">
-              <circle r="26" />
-              <text class="z-label" y="-32">Z4</text>
-              <text class="p-num" y="7">?</text>
-              <text class="p-name" y="42"></text>
-            </g>
-            <g id="h-zone-3" class="player-node" transform="translate(210, 445)">
-              <circle r="26" />
-              <text class="z-label" y="-32">Z3</text>
-              <text class="p-num" y="7">?</text>
-              <text class="p-name" y="42"></text>
-            </g>
-            <g id="h-zone-2" class="player-node" transform="translate(340, 445)">
-              <circle r="26" />
-              <text class="z-label" y="-32">Z2</text>
-              <text class="p-num" y="7">?</text>
-              <text class="p-name" y="42"></text>
-            </g>
-            <!-- Seconda Linea: Z5 (sinistra), Z6 (centro), Z1 (destra - battuta) -->
-            <g id="h-zone-5" class="player-node" transform="translate(80, 610)">
-              <circle r="26" />
-              <text class="z-label" y="-32">Z5</text>
-              <text class="p-num" y="7">?</text>
-              <text class="p-name" y="42"></text>
-            </g>
-            <g id="h-zone-6" class="player-node" transform="translate(210, 610)">
-              <circle r="26" />
-              <text class="z-label" y="-32">Z6</text>
-              <text class="p-num" y="7">?</text>
-              <text class="p-name" y="42"></text>
-            </g>
-            <g id="h-zone-1" class="player-node" transform="translate(340, 610)">
-              <circle r="26" />
-              <text class="z-label" y="-32">Z1 (Battuta)</text>
-              <text class="p-num" y="7">?</text>
-              <text class="p-name" y="42"></text>
-            </g>
+            <!-- ZONA OSPITE (Metà Destra) -->
+            <g id="a-zone-2" class="player-node" transform="translate(540, 100)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z2</text></g>
+            <g id="a-zone-3" class="player-node" transform="translate(540, 230)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z3</text></g>
+            <g id="a-zone-4" class="player-node" transform="translate(540, 360)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z4</text></g>
+            <g id="a-zone-1" class="player-node" transform="translate(760, 100)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z1 (Battuta)</text></g>
+            <g id="a-zone-6" class="player-node" transform="translate(760, 230)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z6</text></g>
+            <g id="a-zone-5" class="player-node" transform="translate(760, 360)"><circle r="30" /><text class="p-num" y="6">?</text><text class="z-label" y="46">Z5</text></g>
           </svg>
         </div>
 
         <div class="court-legend">
           <span class="legend-item"><span class="badge-legend badge-setter">P</span> Palleggiatore</span>
-          <span class="legend-item"><span class="badge-legend badge-server">⚡</span> Battitore in Z1</span>
+          <span class="legend-item"><span class="badge-legend badge-server">⚡</span> Battitore Z1</span>
           <span class="legend-item"><span class="badge-legend badge-libero">L</span> Libero</span>
         </div>
       </section>
@@ -227,7 +202,7 @@
       </section>
     </main>
 
-    <!-- MODAL AUDIT FILE -->
+    <!-- MODAL 1: AUDIT FILE DVW (ADMIN ONLY) -->
     <div class="modal-backdrop" id="audit-modal">
       <div class="modal-box">
         <div class="modal-header">
@@ -235,12 +210,12 @@
           <button class="btn-close" id="btn-close-audit-modal">&times;</button>
         </div>
         <div class="modal-body">
-          <div class="upload-box" style="background: rgba(59, 130, 246, 0.08); border: 2px dashed var(--border-color); border-radius: 8px; padding: 16px; text-align: center; margin-bottom: 14px;">
+          <div class="upload-box">
             <span style="font-size: 1.8rem;">📁</span>
             <p style="margin: 6px 0 10px; font-size: 0.9rem;"><strong>Seleziona un file .dvw dal tuo computer:</strong></p>
             <input type="file" id="audit-file-input" accept=".dvw" />
           </div>
-          <div style="text-align: center; margin: 8px 0; color: var(--text-muted); font-size: 0.75rem; font-weight: 700;">OPPURE TRAMITE PERCORSO FILE</div>
+          <div class="divider-text">OPPURE TRAMITE PERCORSO FILE</div>
           <p style="font-size: 0.85rem; margin-top: 6px;">Inserisci il percorso assoluto sul filesystem:</p>
           <div class="input-group">
             <input type="text" id="audit-file-path" placeholder="D:\Volley\B1FB\giornata_01\&01_COR-VOL_Vicenza_b1fb_26_s.dvw" />
@@ -259,8 +234,180 @@
         </div>
       </div>
     </div>
+
+    <!-- MODAL 2: GESTIONE UTENTI (ADMIN ONLY) -->
+    <div class="modal-backdrop" id="admin-users-modal">
+      <div class="modal-box modal-large">
+        <div class="modal-header">
+          <h3>👥 Gestione Utenti & Multi-Tenancy</h3>
+          <button class="btn-close" id="btn-close-users-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="admin-grid">
+            <!-- Form Creazione Utente -->
+            <div class="admin-form-col">
+              <h4 id="user-form-title">Nuovo Utente</h4>
+              <form id="create-user-form">
+                <input type="hidden" id="edit-user-id" value="" />
+                <div class="form-group">
+                  <label for="new-username">Username *</label>
+                  <input type="text" id="new-username" required placeholder="es. scout_vicenza" />
+                </div>
+                <div class="form-group">
+                  <label for="new-password">Password *</label>
+                  <input type="password" id="new-password" placeholder="Password..." />
+                  <small id="password-hint" style="color:var(--text-muted); font-size:0.75rem; display:none;">Lascia vuoto per non modificare</small>
+                </div>
+                <div class="form-group">
+                  <label for="new-email">Email</label>
+                  <input type="email" id="new-email" placeholder="scout@squadra.it" />
+                </div>
+                <div class="form-group">
+                  <label for="new-role">Ruolo</label>
+                  <select id="new-role">
+                    <option value="SCOUT">SCOUT (Solo squadre assegnate, no upload)</option>
+                    <option value="ADMIN">ADMIN (Accesso completo e configurazione)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Squadre Autorizzate:</label>
+                  <div class="teams-checkbox-list" id="teams-checkbox-list">
+                    <!-- Popolato dinamicamente da /api/admin/teams -->
+                  </div>
+                </div>
+                <div id="user-form-status" style="margin-bottom: 8px;"></div>
+                <button type="submit" id="btn-save-user" class="btn btn-primary btn-block">Salva Utente</button>
+              </form>
+            </div>
+
+            <!-- Tabella Utenti Esistenti -->
+            <div class="admin-table-col">
+              <h4>Utenti Registrati</h4>
+              <div class="table-wrapper-small">
+                <table class="simple-table" id="users-table">
+                  <thead>
+                    <tr>
+                      <th>User</th>
+                      <th>Ruolo</th>
+                      <th>Email</th>
+                      <th>Squadre</th>
+                      <th>Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody id="users-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 3: CONFIGURATORE REGOLE TOCCHI CORRELATI (ADMIN ONLY) -->
+    <div class="modal-backdrop" id="admin-rules-modal">
+      <div class="modal-box modal-large">
+        <div class="modal-header">
+          <h3>⚙️ Configuratore Regole Tocchi Correlati di Fine Azione</h3>
+          <button class="btn-close" id="btn-close-rules-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">
+            Definisci quali colpi sono autorizzati a proseguire o chiudere l'azione dopo un tocco terminale (es. Attacco punto <code>A#</code> seguito da invasione a muro avversaria <code>B/</code>).
+          </p>
+
+          <div class="rules-container">
+            <div class="table-wrapper-small">
+              <table class="simple-table" id="rules-table">
+                <thead>
+                  <tr>
+                    <th>Descrizione</th>
+                    <th>Colpo Terminale</th>
+                    <th>Valutazione</th>
+                    <th>Tocchi Consentiti</th>
+                    <th>Valutazioni Consentite</th>
+                    <th>Squadra</th>
+                    <th>Azione</th>
+                  </tr>
+                </thead>
+                <tbody id="rules-tbody"></tbody>
+              </table>
+            </div>
+
+            <div class="add-rule-panel" style="margin-top:16px; padding:12px; background:var(--bg-card-alt); border-radius:8px;">
+              <h4>Aggiungi Nuova Regola</h4>
+              <div class="add-rule-form">
+                <input type="text" id="rule-desc" placeholder="Descrizione regola..." style="grid-column: 1 / -1;" />
+                <div>
+                  <label>Skill Terminale</label>
+                  <select id="rule-term-skill">
+                    <option value="A">Attacco (A)</option>
+                    <option value="S">Servizio (S)</option>
+                    <option value="B">Muro (B)</option>
+                    <option value="D">Difesa (D)</option>
+                    <option value="R">Ricezione (R)</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Valut. Terminale</label>
+                  <select id="rule-term-eval">
+                    <option value="#">Punto (#)</option>
+                    <option value="/">Muro subito / Invasione (/)</option>
+                    <option value="=">Errore (=)</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Skill Correlate (virgole)</label>
+                  <input type="text" id="rule-follow-skills" placeholder="B, D" />
+                </div>
+                <div>
+                  <label>Valutazioni Correlate</label>
+                  <input type="text" id="rule-follow-evals" placeholder="=, /" />
+                </div>
+                <div>
+                  <label>Squadra</label>
+                  <select id="rule-must-opponent">
+                    <option value="true">Avversaria (Opponent)</option>
+                    <option value="false">Stessa Squadra (Same)</option>
+                  </select>
+                </div>
+                <div style="display: flex; align-items: flex-end; gap: 8px;">
+                  <button id="btn-add-rule" class="btn btn-primary">➕ Aggiungi</button>
+                  <button id="btn-revalidate-matches" class="btn btn-secondary">🔄 Rivalida Gare</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 4: AUDIT ACCESSI & LOGIN TRACKING (ADMIN ONLY) -->
+    <div class="modal-backdrop" id="admin-logins-modal">
+      <div class="modal-box modal-large">
+        <div class="modal-header">
+          <h3>📋 Registro Accessi & Tentativi di Login (IP Tracking)</h3>
+          <button class="btn-close" id="btn-close-logins-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="table-wrapper-small" style="max-height: 400px;">
+            <table class="simple-table" id="logins-table">
+              <thead>
+                <tr>
+                  <th>Data & Ora</th>
+                  <th>Username</th>
+                  <th>Indirizzo IP</th>
+                  <th>Esito</th>
+                  <th>User Agent</th>
+                </tr>
+              </thead>
+              <tbody id="logins-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <script src="/static/app.js?v=3000.1"></script>
+  <script src="/static/app.js?v=3000.2"></script>
 </body>
 </html>
