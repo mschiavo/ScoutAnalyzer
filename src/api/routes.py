@@ -1,6 +1,7 @@
 import os
 import json
 import sqlite3
+import re
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, Query, Body, File, UploadFile, Depends, Request, Form
 from pydantic import BaseModel
@@ -151,7 +152,51 @@ def list_matches(current_user: User = Depends(get_current_user)):
         """
         c.execute(query, current_user.team_ids + current_user.team_ids)
 
-    rows = [dict(r) for r in c.fetchall()]
+    raw_rows = [dict(r) for r in c.fetchall()]
+    rows = []
+    for m in raw_rows:
+        c.execute("""
+            SELECT set_number, home_score, away_score, winning_team
+            FROM match_sets
+            WHERE match_id = ?
+            ORDER BY set_number ASC
+        """, (m["id"],))
+        sets = c.fetchall()
+
+        h_won = 0
+        a_won = 0
+        partials = []
+        for s in sets:
+            h_s = s[1] if isinstance(s, (tuple, list)) else s["home_score"]
+            a_s = s[2] if isinstance(s, (tuple, list)) else s["away_score"]
+            w_t = s[3] if isinstance(s, (tuple, list)) else s["winning_team"]
+            if w_t == "*":
+                h_won += 1
+            elif w_t == "a":
+                a_won += 1
+            elif h_s is not None and a_s is not None:
+                if h_s > a_s:
+                    h_won += 1
+                elif a_s > h_s:
+                    a_won += 1
+            if h_s is not None and a_s is not None:
+                partials.append(f"{h_s}-{a_s}")
+
+        m["home_sets_won"] = h_won
+        m["away_sets_won"] = a_won
+        m["final_score"] = f"{h_won} - {a_won}" if (h_won > 0 or a_won > 0) else "0 - 0"
+        m["set_scores"] = ", ".join(partials) if partials else "N.D."
+
+        code = m.get("match_code") or ""
+        sync_match = re.search(r'_sync_([a-zA-Z0-9]+)$', code, re.IGNORECASE)
+        if sync_match:
+            m["scout_author"] = sync_match.group(1)
+        else:
+            tail_match = re.search(r'_([a-zA-Z0-9]+)$', code, re.IGNORECASE)
+            m["scout_author"] = tail_match.group(1) if tail_match else "N.D."
+
+        rows.append(m)
+
     conn.close()
     return rows
 

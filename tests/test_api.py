@@ -124,3 +124,47 @@ True;25-20;22;
     assert data["status"] == "SUCCESS"
     assert "2026-2027/B1F/B/03/&01_test_match.dvw" in data.get("storage_path", "")
 
+
+def test_matches_list_enriched_fields():
+    headers = get_admin_headers()
+    sample_content = b"""[3MATCH]
+15/10/2026;20.30.00;2026/2027;Campionato;Andata;;1;1;TEST_SCORE;1;Z;0;;;
+[3TEAMS]
+TH;Home Team;0;;;;;
+TV;Away Team;0;;;;;
+[3SET]
+True;8-5;16-10;21-15;25-20;22;
+True;8-5;16-10;21-15;23-25;24;
+True;8-5;16-10;21-15;25-18;20;
+True;8-5;16-10;21-15;25-22;23;
+[3PLAYERS-H]
+0;1;10;;;;;;;TEST;H;;;2;False;;;;;;
+[3PLAYERS-V]
+1;1;20;;;;;;;TEST;V;;;2;False;;;;;;
+[3SCOUT]
+*10SM#;;;;;;;;1;1;1;1;100;;10;11;12;13;14;15;20;21;22;23;24;25;
+*p25:20;;;;;;;;1;1;1;1;105;;10;11;12;13;14;15;20;21;22;23;24;25;
+"""
+    res_up = client.post(
+        "/api/audit/upload",
+        files={"file": ("&And01_aduna-verona_sync_marco.dvw", sample_content, "text/plain")},
+        headers=headers
+    )
+    assert res_up.status_code == 200
+
+    res = client.get("/api/matches", headers=headers)
+    assert res.status_code == 200
+    matches = res.json()
+    assert len(matches) > 0
+    m = next((x for x in matches if "sync_marco" in x["match_code"]), None)
+    assert m is not None
+
+    assert "final_score" in m
+    assert "set_scores" in m
+    assert "scout_author" in m
+    assert m["scout_author"].lower() == "marco"
+    assert "25-20" in m["set_scores"]
+    assert "home_sets_won" in m
+    assert "away_sets_won" in m
+
+
