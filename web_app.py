@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 
 from src.api.routes import router as api_router
+from src.api.admin_routes import admin_router
 
 app = FastAPI(
     title="ScoutAnalyzer Web API & Dashboard",
@@ -33,6 +34,7 @@ async def add_no_cache_header(request, call_next):
 
 # Inclusione delle rotte API
 app.include_router(api_router)
+app.include_router(admin_router)
 
 # Mount della directory dei file statici frontend (se presente)
 static_dir = os.path.join(os.path.dirname(__file__), "static")
