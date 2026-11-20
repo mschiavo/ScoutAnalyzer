@@ -28,6 +28,7 @@ def get_db_path() -> str:
 def get_db_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     path = db_path or get_db_path()
     conn = sqlite3.connect(path)
+    conn.execute("PRAGMA foreign_keys = ON;")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -105,7 +106,7 @@ def login(payload: LoginRequest, request: Request):
     conn.commit()
     conn.close()
 
-    is_local = ip_addr in ("127.0.0.1", "localhost", "::1")
+    is_local = (request.client.host in ("127.0.0.1", "localhost", "::1")) if request.client else False
     token = create_access_token(user_id=user_id, username=row["username"], role=row["role"], is_local=is_local)
 
     return {
@@ -382,6 +383,22 @@ def audit_file(payload: AuditFileRequest, current_user: User = Depends(require_a
         ingester = IngestionManager()
         ingest_res = ingester.ingest_dvw(parsed)
         match_id = ingest_res["match_id"]
+
+        # Archiviazione in StorageManager
+        try:
+            with open(file_path, "rb") as f_in:
+                content = f_in.read()
+            from src.storage_manager import StorageManager
+            storage = StorageManager()
+            season = parsed.get("match_info", {}).get("season") or "2026-2027"
+            rel_path, f_hash = storage.save_dvw(content, os.path.basename(file_path), season=season)
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute("UPDATE matches SET storage_path = ?, file_hash = ? WHERE id = ?", (rel_path, f_hash, match_id))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
 
         # 3. State Engine
         engine = MatchStateEngine(match_id=match_id)
