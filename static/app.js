@@ -799,9 +799,11 @@ async function loadAdminTeams() {
     state.teamsList.forEach(t => {
       const lbl = document.createElement("label");
       lbl.className = "team-checkbox-item";
+      lbl.title = `${t.code} - ${t.name}`;
       lbl.innerHTML = `
         <input type="checkbox" value="${t.id}" class="team-chk" />
-        <span><strong>${t.code}</strong> - ${t.name}</span>
+        <span class="team-code-badge">${escapeHtml(t.code)}</span>
+        <span class="team-name-text">${escapeHtml(t.name)}</span>
       `;
       teamsCheckboxList.appendChild(lbl);
     });
