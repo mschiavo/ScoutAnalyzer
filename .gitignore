@@ -67,3 +67,7 @@ out/
 
 # Superpowers scratch directory
 .superpowers/
+
+# Managed storage for uploaded DVW files
+storage/dvw/*
+!storage/dvw/.gitkeep
