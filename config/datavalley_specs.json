@@ -22,5 +22,39 @@
     "set_points_regular": 25,
     "set_points_tiebreak": 15,
     "min_points_margin": 2
-  }
+  },
+  "permitted_terminal_followups": [
+    {
+      "description": "Attacco punto (#) seguito da errore (=) a muro/difesa o invasione muro (/) avversario",
+      "terminal_skill": "A",
+      "terminal_eval": "#",
+      "followup_skills": ["B", "D"],
+      "followup_evals": ["=", "/"],
+      "must_be_opponent": true
+    },
+    {
+      "description": "Attacco murato (/) seguito da muro punto (#) avversario",
+      "terminal_skill": "A",
+      "terminal_eval": "/",
+      "followup_skills": ["B"],
+      "followup_evals": ["#"],
+      "must_be_opponent": true
+    },
+    {
+      "description": "Ace di battuta (#) seguito da ricezione errore (=) avversaria",
+      "terminal_skill": "S",
+      "terminal_eval": "#",
+      "followup_skills": ["R"],
+      "followup_evals": ["="],
+      "must_be_opponent": true
+    },
+    {
+      "description": "Muro errore (=) seguito da difesa errore (=) della stessa squadra",
+      "terminal_skill": "B",
+      "terminal_eval": "=",
+      "followup_skills": ["D"],
+      "followup_evals": ["="],
+      "must_be_opponent": false
+    }
+  ]
 }

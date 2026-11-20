@@ -132,3 +132,33 @@ def test_set_score_margin_rule(tmp_path):
     errors = [r[0] for r in cur.fetchall()]
     conn.close()
     assert any("Punteggio finale anomalo" in err for err in errors)
+
+def test_correlated_attack_point_followed_by_block_net_touch(tmp_path):
+    db_file = str(tmp_path / "test_corr.db")
+    create_database(db_file)
+
+    ingester = IngestionManager()
+    ingester.db_path = db_file
+    mock_data = {
+        "match_info": {"match_code": "VB_TEST_CORR", "date": "2026-10-15"},
+        "teams": {"home_code": "H", "home_name": "Home", "away_code": "A", "away_name": "Away"},
+        "sets": [{"set_number": 1, "home_score": 25, "away_score": 20, "duration_minutes": 25, "winning_team": "*"}],
+        "players_home": [{"number": "18", "name": "H18"}],
+        "players_visiting": [{"number": "9", "name": "A9"}],
+        "events": [
+            # Battuta Home
+            {"event_index": 1, "set_number": 1, "team_code": "*", "shirt_number": 18, "skill": "S", "skill_type": "M", "evaluation": "+", "extended_code": "*18SM+", "is_valid": 1, "home_setter_pos": 1, "away_setter_pos": 1, "home_lineup": [18, 1, 2, 3, 4, 5], "away_lineup": [9, 10, 11, 12, 13, 14]},
+            # Attacco punto Home: A#
+            {"event_index": 2, "set_number": 1, "team_code": "*", "shirt_number": 18, "skill": "A", "skill_type": "O", "evaluation": "#", "extended_code": "*18AO#", "is_valid": 1, "home_setter_pos": 1, "away_setter_pos": 1, "home_lineup": [18, 1, 2, 3, 4, 5], "away_lineup": [9, 10, 11, 12, 13, 14]},
+            # Muro invasione Ospite: B/ correlato consentito
+            {"event_index": 3, "set_number": 1, "team_code": "a", "shirt_number": 9, "skill": "B", "skill_type": "O", "evaluation": "/", "extended_code": "a09BO/", "is_valid": 1, "home_setter_pos": 1, "away_setter_pos": 1, "home_lineup": [18, 1, 2, 3, 4, 5], "away_lineup": [9, 10, 11, 12, 13, 14]},
+            # Punteggio assegnato a Casa
+            {"event_index": 4, "set_number": 1, "team_code": "*", "extended_code": "*p01:00", "is_valid": 1, "home_setter_pos": 1, "away_setter_pos": 1, "home_lineup": [18, 1, 2, 3, 4, 5], "away_lineup": [9, 10, 11, 12, 13, 14]},
+        ]
+    }
+    res = ingester.ingest_dvw(mock_data)
+
+    engine = MatchStateEngine(match_id=res["match_id"])
+    engine.db_path = db_file
+    status = engine.process_match()
+    assert status["issues_found"] == 0

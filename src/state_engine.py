@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import json
 from typing import Dict, List, Any, Optional
@@ -22,6 +23,17 @@ class MatchStateEngine:
             self.config = json.load(f)
         self.db_path = self.config.get("db_path", "scoutanalyzer.db")
         self.issues: List[Dict[str, Any]] = []
+
+        # Caricamento specifiche Data Volley e sequenze terminali consentite
+        self.specs_path = "config/datavalley_specs.json"
+        self.permitted_followups = []
+        if os.path.exists(self.specs_path):
+            try:
+                with open(self.specs_path, "r", encoding="utf-8") as f:
+                    specs = json.load(f)
+                    self.permitted_followups = specs.get("permitted_terminal_followups", [])
+            except Exception:
+                pass
 
     def process_match(self) -> Dict[str, Any]:
         conn = sqlite3.connect(self.db_path)
@@ -294,14 +306,7 @@ class MatchStateEngine:
 
             # --- H. VERIFICA PROSECUZIONE DOPO COLPO TERMINALE DEFINITIVO ---
             if skill is not None and terminal_event is not None:
-                is_terminal_followup = (
-                    (terminal_event['skill'] == 'A' and terminal_event['eval'] == '#' and skill in ('B', 'D') and evaluation == '=') or
-                    (terminal_event['skill'] == 'A' and terminal_event['eval'] == '/' and skill == 'B' and evaluation == '#') or
-                    (terminal_event['skill'] == 'B' and terminal_event['eval'] == '=' and skill == 'D' and evaluation == '=' and terminal_event['team'] == team_code) or
-                    (terminal_event['skill'] == 'S' and terminal_event['eval'] == '#' and skill == 'R' and evaluation == '=')
-                )
-
-                if not is_terminal_followup:
+                if not self._is_permitted_terminal_followup(terminal_event, skill, evaluation, team_code):
                     err_msg = (f"Azione prosegue illegalmente dopo colpo terminale: rilevato tocco '{code}' "
                                f"dopo {terminal_event['code']} (riga {terminal_event['line']})")
                     self._log_issue(cursor, ev_idx, code, err_msg, ev_id)
@@ -468,6 +473,32 @@ class MatchStateEngine:
             VALUES (?, ?, ?, ?, 'ERROR', ?)
         """, (self.match_id, self.match_code, ev_idx, code, err_msg))
         cursor.execute("UPDATE events SET is_valid = 0, error_note = ? WHERE id = ?", (err_msg, ev_id))
+
+    def _is_permitted_terminal_followup(self, terminal_event: Dict[str, Any], skill: str, evaluation: str, team_code: str) -> bool:
+        t_skill = terminal_event.get("skill")
+        t_eval = terminal_event.get("eval")
+        t_team = terminal_event.get("team")
+
+        # 1. Verifica tramite regole configurate in datavalley_specs.json
+        for rule in self.permitted_followups:
+            if rule.get("terminal_skill") == t_skill and rule.get("terminal_eval") == t_eval:
+                if skill in rule.get("followup_skills", []) and evaluation in rule.get("followup_evals", []):
+                    must_opponent = rule.get("must_be_opponent", True)
+                    is_opponent = (team_code != t_team)
+                    if must_opponent == is_opponent:
+                        return True
+
+        # 2. Fallback cablato sicuro
+        if t_skill == 'A' and t_eval == '#' and skill in ('B', 'D') and evaluation in ('=', '/'):
+            return True
+        if t_skill == 'A' and t_eval == '/' and skill == 'B' and evaluation == '#':
+            return True
+        if t_skill == 'B' and t_eval == '=' and skill == 'D' and evaluation == '=' and team_code == t_team:
+            return True
+        if t_skill == 'S' and t_eval == '#' and skill == 'R' and evaluation == '=':
+            return True
+
+        return False
 
     def _rotate_clockwise(self, pos_list: List[Optional[int]]):
         if all(x is None for x in pos_list):
