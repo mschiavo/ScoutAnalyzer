@@ -330,6 +330,20 @@ async def audit_upload(file: UploadFile = File(...), current_user: User = Depend
         ingest_res = ingester.ingest_dvw(parsed)
         match_id = ingest_res["match_id"]
 
+        # Archiviazione permanente in StorageManager
+        try:
+            from src.storage_manager import StorageManager
+            storage = StorageManager()
+            season = parsed.get("match_info", {}).get("season") or "2026-2027"
+            rel_path, f_hash = storage.save_dvw(content, file.filename, season=season)
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute("UPDATE matches SET storage_path = ?, file_hash = ? WHERE id = ?", (rel_path, f_hash, match_id))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
         engine = MatchStateEngine(match_id=match_id)
         state_res = engine.process_match()
 
