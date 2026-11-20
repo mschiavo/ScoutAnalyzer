@@ -1,5 +1,6 @@
 import os
 import uvicorn
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -8,10 +9,22 @@ from fastapi.responses import FileResponse, RedirectResponse
 from src.api.routes import router as api_router
 from src.api.admin_routes import admin_router
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        from database.setup_db import create_database
+        from src.api.routes import get_db_path
+        db_p = get_db_path()
+        create_database(db_p)
+    except Exception as e:
+        print(f"Warning: create_database on startup failed: {e}")
+    yield
+
 app = FastAPI(
     title="ScoutAnalyzer Web API & Dashboard",
     description="Piattaforma di Audit, Ispezione e Validazione Regolamentare per File Scout Data Volley (.dvw)",
-    version="1.2.0"
+    version="1.2.0",
+    lifespan=lifespan
 )
 
 # Abilitazione CORS per consentire l'accesso sia alla SPA interna che a frontend esterni (es. app Vite su porta 5173)

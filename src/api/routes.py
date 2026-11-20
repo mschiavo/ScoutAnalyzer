@@ -16,13 +16,21 @@ router = APIRouter(prefix="/api", tags=["ScoutAnalyzer API"])
 DEFAULT_CONFIG_PATH = "config/config.json"
 
 def get_db_path() -> str:
+    env_path = os.environ.get("SCOUT_DB_PATH")
+    if env_path:
+        return env_path
     if os.path.exists(DEFAULT_CONFIG_PATH):
         try:
             with open(DEFAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-                return cfg.get("db_path", "scoutanalyzer.db")
+                p = cfg.get("db_path", "scoutanalyzer.db")
+                if os.path.exists(p):
+                    return p
         except Exception:
             pass
+    root_candidate = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "scoutanalyzer.db")
+    if os.path.exists(root_candidate):
+        return root_candidate
     return "scoutanalyzer.db"
 
 def get_db_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
