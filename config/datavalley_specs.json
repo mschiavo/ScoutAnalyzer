@@ -1,21 +1,69 @@
 {
-  "skills": ["S", "R", "E", "A", "B", "D", "F"],
-  "evaluations": ["#", "+", "!", "-", "/", "="],
+  "skills": [
+    "S",
+    "R",
+    "E",
+    "A",
+    "B",
+    "D",
+    "F"
+  ],
+  "evaluations": [
+    "#",
+    "+",
+    "!",
+    "-",
+    "/",
+    "="
+  ],
   "terminal_evaluations": {
-    "S": ["#", "="],
-    "A": ["#", "=", "/"],
-    "B": ["#", "="],
-    "D": ["="],
-    "R": ["="],
-    "E": ["="],
-    "F": ["="]
+    "S": [
+      "#",
+      "="
+    ],
+    "A": [
+      "#",
+      "=",
+      "/"
+    ],
+    "B": [
+      "#",
+      "="
+    ],
+    "D": [
+      "="
+    ],
+    "R": [
+      "="
+    ],
+    "E": [
+      "="
+    ],
+    "F": [
+      "="
+    ]
   },
   "roles": {
-    "1": { "code": "L", "name": "Libero" },
-    "2": { "code": "S", "name": "Schiacciatore" },
-    "3": { "code": "O", "name": "Opposto" },
-    "4": { "code": "C", "name": "Centrale" },
-    "5": { "code": "P", "name": "Palleggiatore" }
+    "1": {
+      "code": "L",
+      "name": "Libero"
+    },
+    "2": {
+      "code": "S",
+      "name": "Schiacciatore"
+    },
+    "3": {
+      "code": "O",
+      "name": "Opposto"
+    },
+    "4": {
+      "code": "C",
+      "name": "Centrale"
+    },
+    "5": {
+      "code": "P",
+      "name": "Palleggiatore"
+    }
   },
   "rules": {
     "max_sets": 5,
@@ -28,32 +76,50 @@
       "description": "Attacco punto (#) seguito da errore (=) a muro/difesa o invasione muro (/) avversario",
       "terminal_skill": "A",
       "terminal_eval": "#",
-      "followup_skills": ["B", "D"],
-      "followup_evals": ["=", "/"],
+      "followup_skills": [
+        "B",
+        "D"
+      ],
+      "followup_evals": [
+        "=",
+        "/"
+      ],
       "must_be_opponent": true
     },
     {
       "description": "Attacco murato (/) seguito da muro punto (#) avversario",
       "terminal_skill": "A",
       "terminal_eval": "/",
-      "followup_skills": ["B"],
-      "followup_evals": ["#"],
+      "followup_skills": [
+        "B"
+      ],
+      "followup_evals": [
+        "#"
+      ],
       "must_be_opponent": true
     },
     {
       "description": "Ace di battuta (#) seguito da ricezione errore (=) avversaria",
       "terminal_skill": "S",
       "terminal_eval": "#",
-      "followup_skills": ["R"],
-      "followup_evals": ["="],
+      "followup_skills": [
+        "R"
+      ],
+      "followup_evals": [
+        "="
+      ],
       "must_be_opponent": true
     },
     {
       "description": "Muro errore (=) seguito da difesa errore (=) della stessa squadra",
       "terminal_skill": "B",
       "terminal_eval": "=",
-      "followup_skills": ["D"],
-      "followup_evals": ["="],
+      "followup_skills": [
+        "D"
+      ],
+      "followup_evals": [
+        "="
+      ],
       "must_be_opponent": false
     }
   ]
