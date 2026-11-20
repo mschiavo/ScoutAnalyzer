@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 from typing import Dict, Any, List, Optional
 from src.db import get_db_connection
 
@@ -174,7 +175,7 @@ class IngestionManager:
         finally:
             conn.close()
 
-    def _ensure_championship(self, cursor: sqlite3.Cursor, match_info: Dict[str, Any]) -> int:
+    def _ensure_championship(self, cursor: Any, match_info: Dict[str, Any]) -> int:
         season = match_info.get("season") or "2026/2027"
         name = match_info.get("league") or "Campionato B1F"
         cursor.execute("INSERT OR IGNORE INTO championships (code, name) VALUES (?, ?)", (season, f"{name} {season}"))
@@ -182,7 +183,7 @@ class IngestionManager:
         row = cursor.fetchone()
         return row[0] if row else 1
 
-    def _ensure_teams(self, cursor: sqlite3.Cursor, teams: Dict[str, Any]) -> (int, int):
+    def _ensure_teams(self, cursor: Any, teams: Dict[str, Any]) -> (int, int):
         home_code = teams.get("home_code", "HOME")
         home_name = teams.get("home_name", "Home Team")
         away_code = teams.get("away_code", "AWAY")
@@ -199,7 +200,7 @@ class IngestionManager:
 
         return home_id, away_id
 
-    def _ensure_players(self, cursor: sqlite3.Cursor, team_id: int, players: List[Dict[str, Any]]) -> Dict[str, int]:
+    def _ensure_players(self, cursor: Any, team_id: int, players: List[Dict[str, Any]]) -> Dict[str, int]:
         players_map = {}
         for p in players:
             shirt = str(p.get("number", "")).strip()
