@@ -208,6 +208,31 @@ class PostgresConnectionWrapper:
         self._conn.close()
 
 
+def _ensure_sqlite_matches_schema(conn: sqlite3.Connection):
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='matches'")
+        if cur.fetchone():
+            cur.execute("PRAGMA table_info(matches)")
+            cols = {r[1] for r in cur.fetchall()}
+            new_cols = [
+                ("home_sets_won", "INTEGER DEFAULT 0"),
+                ("away_sets_won", "INTEGER DEFAULT 0"),
+                ("final_score", "TEXT DEFAULT '0 - 0'"),
+                ("set_scores", "TEXT DEFAULT ''"),
+                ("sets_count", "INTEGER DEFAULT 0"),
+                ("events_count", "INTEGER DEFAULT 0"),
+                ("logs_count", "INTEGER DEFAULT 0"),
+                ("scout_author", "TEXT")
+            ]
+            for col_name, col_type in new_cols:
+                if col_name not in cols:
+                    cur.execute(f"ALTER TABLE matches ADD COLUMN {col_name} {col_type}")
+            conn.commit()
+    except Exception:
+        pass
+
+
 def get_db_connection(db_path: Optional[str] = None) -> Any:
     """Restituisce una connessione al database attivo:
     - PostgreSQL (Neon.tech) se DATABASE_URL è presente;
@@ -228,6 +253,7 @@ def get_db_connection(db_path: Optional[str] = None) -> Any:
     conn = sqlite3.connect(path)
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.row_factory = sqlite3.Row
+    _ensure_sqlite_matches_schema(conn)
     return conn
 
 

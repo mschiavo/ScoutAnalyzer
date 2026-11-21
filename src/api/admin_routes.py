@@ -308,44 +308,42 @@ def revalidate_single_match(match_id: int, current_user: User = Depends(require_
     c = conn.cursor()
     c.execute("SELECT id, match_code FROM matches WHERE id = ?", (match_id,))
     row = c.fetchone()
+    conn.close()
     if not row:
-        conn.close()
         raise HTTPException(status_code=404, detail=f"Partita {match_id} non trovata.")
 
     try:
         engine = MatchStateEngine(match_id=match_id)
         s_res = engine.process_match()
-
-        from src.db import refresh_match_summary_metrics
-        metrics = refresh_match_summary_metrics(c, match_id)
-        conn.commit()
-
-        c.execute("""
-            SELECT 
-                m.id, m.match_code, m.scheduled_date, m.home_team_id, m.away_team_id,
-                m.home_sets_won, m.away_sets_won, m.final_score, m.set_scores,
-                m.sets_count, m.events_count, m.logs_count, m.scout_author,
-                ht.code as home_code, ht.name as home_name,
-                at.code as away_code, at.name as away_name
-            FROM matches m
-            LEFT JOIN teams ht ON m.home_team_id = ht.id
-            LEFT JOIN teams at ON m.away_team_id = at.id
-            WHERE m.id = ?
-        """, (match_id,))
-        m_row = c.fetchone()
-        updated_match = dict(m_row) if m_row else {}
-        conn.close()
-
-        return {
-            "status": "SUCCESS",
-            "match_id": match_id,
-            "issues_count": len(engine.issues),
-            "match": updated_match
-        }
     except Exception as e:
-        conn.close()
         logger.error(f"Errore rivalutazione match {match_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Errore durante la rivalutazione della gara: {str(e)}")
+
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("""
+        SELECT 
+            m.id, m.match_code, m.scheduled_date, m.home_team_id, m.away_team_id,
+            m.home_sets_won, m.away_sets_won, m.final_score, m.set_scores,
+            m.sets_count, m.events_count, m.logs_count, m.scout_author,
+            ht.code as home_code, ht.name as home_name,
+            at.code as away_code, at.name as away_name
+        FROM matches m
+        LEFT JOIN teams ht ON m.home_team_id = ht.id
+        LEFT JOIN teams at ON m.away_team_id = at.id
+        WHERE m.id = ?
+    """, (match_id,))
+    m_row = c.fetchone()
+    conn.close()
+    if not m_row:
+        raise HTTPException(status_code=404, detail=f"Partita {match_id} non trovata.")
+
+    return {
+        "status": "SUCCESS",
+        "match_id": match_id,
+        "issues_count": len(engine.issues),
+        "match": dict(m_row)
+    }
 
 @admin_router.delete("/matches/clear")
 def clear_all_matches():

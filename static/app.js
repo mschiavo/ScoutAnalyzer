@@ -1088,21 +1088,28 @@ async function handleAddRule() {
   }
 }
 
+async function parseErrorResponse(res, defaultMsg = "Errore durante l'operazione") {
+  try {
+    const text = await res.text();
+    if (!text) return defaultMsg;
+    try {
+      const j = JSON.parse(text);
+      return j.detail || j.error || text;
+    } catch (_) {
+      return text;
+    }
+  } catch (_) {
+    return defaultMsg;
+  }
+}
+
 async function handleRevalidateMatches() {
   btnRevalidateMatches.disabled = true;
   btnRevalidateMatches.textContent = "⏳ Rivalutazione...";
   try {
     const res = await authFetch("/api/admin/rules/revalidate", { method: "POST" });
     if (!res.ok) {
-      let errDetail = "Errore durante la rivalutazione";
-      try {
-        const errJson = await res.json();
-        errDetail = errJson.detail || errJson.error || errDetail;
-      } catch (_) {
-        const text = await res.text();
-        if (text) errDetail = text;
-      }
-      throw new Error(errDetail);
+      throw new Error(await parseErrorResponse(res, "Errore durante la rivalutazione"));
     }
     const data = await res.json();
     const count = data.revalidated_matches ? data.revalidated_matches.length : 0;
@@ -1218,15 +1225,7 @@ async function revalidateMatchFromAdmin(matchId) {
   try {
     const res = await authFetch(`/api/admin/matches/${matchId}/revalidate`, { method: "POST" });
     if (!res.ok) {
-      let errDetail = "Errore durante la validazione della partita";
-      try {
-        const errJson = await res.json();
-        errDetail = errJson.detail || errJson.error || errDetail;
-      } catch (_) {
-        const text = await res.text();
-        if (text) errDetail = text;
-      }
-      throw new Error(errDetail);
+      throw new Error(await parseErrorResponse(res, "Errore durante la validazione della partita"));
     }
     const data = await res.json();
     alert(`Validazione completata per gara #${matchId}! Anomalie rilevate: ${data.issues_count}`);
@@ -1257,15 +1256,7 @@ async function handleAdminRevalidateAllMatches() {
   try {
     const res = await authFetch("/api/admin/rules/revalidate", { method: "POST" });
     if (!res.ok) {
-      let errDetail = "Errore durante la rivalutazione massiva";
-      try {
-        const errJson = await res.json();
-        errDetail = errJson.detail || errJson.error || errDetail;
-      } catch (_) {
-        const text = await res.text();
-        if (text) errDetail = text;
-      }
-      throw new Error(errDetail);
+      throw new Error(await parseErrorResponse(res, "Errore durante la rivalutazione massiva"));
     }
     const data = await res.json();
     const revalCount = data.revalidated_matches ? data.revalidated_matches.length : count;

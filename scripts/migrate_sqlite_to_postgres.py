@@ -224,6 +224,22 @@ def setup_and_seed_postgres():
                 ALTER TABLE matches ADD COLUMN IF NOT EXISTS events_count INTEGER DEFAULT 0;
                 ALTER TABLE matches ADD COLUMN IF NOT EXISTS logs_count INTEGER DEFAULT 0;
                 ALTER TABLE matches ADD COLUMN IF NOT EXISTS scout_author TEXT;
+
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'validation_logs' AND column_name = 'severity') THEN
+                        ALTER TABLE validation_logs ALTER COLUMN severity DROP NOT NULL;
+                        ALTER TABLE validation_logs ALTER COLUMN severity SET DEFAULT 'ERROR';
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'validation_logs' AND column_name = 'issue_type') THEN
+                        ALTER TABLE validation_logs ALTER COLUMN issue_type DROP NOT NULL;
+                        ALTER TABLE validation_logs ALTER COLUMN issue_type SET DEFAULT 'SEMANTIC';
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'validation_logs' AND column_name = 'description') THEN
+                        ALTER TABLE validation_logs ALTER COLUMN description DROP NOT NULL;
+                        ALTER TABLE validation_logs ALTER COLUMN description SET DEFAULT '';
+                    END IF;
+                END $$;
             """)
             pg_conn.commit()
             print("✅ Schema 16 tabelle e indici verificati su Neon PostgreSQL.")
