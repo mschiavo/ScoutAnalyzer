@@ -167,4 +167,16 @@ True;8-5;16-10;21-15;25-22;23;
     assert "home_sets_won" in m
     assert "away_sets_won" in m
 
+def test_list_matches_performance_and_columns_integrity():
+    headers = get_admin_headers()
+    res = client.get("/api/matches", headers=headers)
+    assert res.status_code == 200
+    matches = res.json()
+    assert isinstance(matches, list)
+    if matches:
+        m = matches[0]
+        for field in ["final_score", "set_scores", "sets_count", "events_count", "logs_count", "home_sets_won", "away_sets_won", "home_name", "away_name"]:
+            assert field in m, f"Field {field} missing from /api/matches payload"
+
+
 

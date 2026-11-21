@@ -160,6 +160,9 @@ class IngestionManager:
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, syntax_errors)
 
+            from src.db import refresh_match_summary_metrics
+            refresh_match_summary_metrics(cursor, match_id)
+
             conn.commit()
             return {
                 "status": "SUCCESS",

@@ -119,6 +119,9 @@ class MatchStateEngine:
                             VALUES (?, ?, NULL, ?, 'WARNING', ?)
                         """, (self.match_id, self.match_code, f"SET_{s_num}", err_msg))
 
+            from src.db import refresh_match_summary_metrics
+            refresh_match_summary_metrics(cursor, self.match_id)
+
             conn.commit()
             return {
                 "status": "SUCCESS",

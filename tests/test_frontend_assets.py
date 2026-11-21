@@ -59,7 +59,10 @@ def test_match_select_dropdown_clean_formatting():
         js = f.read()
 
     assert "populateMatchSelect" in js
-    assert "vs ${away} — ${m.match_code}" in js
+    # Non deve comparire match_code o ID tecnico nelle opzioni della tendina
+    func_body = js[js.find("function populateMatchSelect()"):js.find("function resetMatchDisplay()")]
+    assert "${m.match_code}" not in func_body
+    assert "opt.textContent = `${home} - ${away}`;" in func_body
 
 def test_admin_matches_full_page_view():
     with open("static/index.html", "r", encoding="utf-8") as f:
@@ -75,3 +78,26 @@ def test_admin_matches_full_page_view():
 
     assert "switchView" in js
     assert "openMatchInDashboard" in js
+
+def test_admin_matches_page_validation_buttons():
+    with open("static/index.html", "r", encoding="utf-8") as f:
+        html = f.read()
+    with open("static/app.js", "r", encoding="utf-8") as f:
+        js = f.read()
+
+    assert "btn-admin-revalidate-all" in html
+    assert "revalidateMatchFromAdmin" in js
+    assert "handleAdminRevalidateAllMatches" in js
+    assert "30" in js  # Threshold alert for > 30 matches
+
+def test_dashboard_anomaly_filter_robustness():
+    with open("static/app.js", "r", encoding="utf-8") as f:
+        js = f.read()
+
+    # Must check boolean false/0 and error_note without relying strictly on === 1
+    func_body = js[js.find("function renderEventsTable()"):js.find("function showEventOnCourt")]
+    assert "ev.is_valid === 1" not in func_body
+    assert "ev.is_valid === 0 || ev.is_valid === false" in func_body
+    assert "filterErrorsOnly.checked" in js
+
+

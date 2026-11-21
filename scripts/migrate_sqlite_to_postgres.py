@@ -69,7 +69,15 @@ CREATE TABLE IF NOT EXISTS matches (
     scheduled_date TEXT,
     status TEXT DEFAULT 'PENDING',
     storage_path TEXT,
-    file_hash TEXT
+    file_hash TEXT,
+    home_sets_won INTEGER DEFAULT 0,
+    away_sets_won INTEGER DEFAULT 0,
+    final_score TEXT DEFAULT '0 - 0',
+    set_scores TEXT DEFAULT '',
+    sets_count INTEGER DEFAULT 0,
+    events_count INTEGER DEFAULT 0,
+    logs_count INTEGER DEFAULT 0,
+    scout_author TEXT
 );
 
 CREATE TABLE IF NOT EXISTS match_sets (
@@ -208,6 +216,14 @@ def setup_and_seed_postgres():
                 ALTER TABLE validation_logs ADD COLUMN IF NOT EXISTS parsed_status TEXT;
                 ALTER TABLE validation_logs ADD COLUMN IF NOT EXISTS error_summary TEXT;
                 ALTER TABLE validation_logs ADD COLUMN IF NOT EXISTS validated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+                ALTER TABLE matches ADD COLUMN IF NOT EXISTS home_sets_won INTEGER DEFAULT 0;
+                ALTER TABLE matches ADD COLUMN IF NOT EXISTS away_sets_won INTEGER DEFAULT 0;
+                ALTER TABLE matches ADD COLUMN IF NOT EXISTS final_score TEXT DEFAULT '0 - 0';
+                ALTER TABLE matches ADD COLUMN IF NOT EXISTS set_scores TEXT DEFAULT '';
+                ALTER TABLE matches ADD COLUMN IF NOT EXISTS sets_count INTEGER DEFAULT 0;
+                ALTER TABLE matches ADD COLUMN IF NOT EXISTS events_count INTEGER DEFAULT 0;
+                ALTER TABLE matches ADD COLUMN IF NOT EXISTS logs_count INTEGER DEFAULT 0;
+                ALTER TABLE matches ADD COLUMN IF NOT EXISTS scout_author TEXT;
             """)
             pg_conn.commit()
             print("✅ Schema 16 tabelle e indici verificati su Neon PostgreSQL.")

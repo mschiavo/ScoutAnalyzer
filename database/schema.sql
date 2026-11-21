@@ -71,6 +71,14 @@ CREATE TABLE IF NOT EXISTS matches (
     status TEXT DEFAULT 'PENDING',   -- PENDING, VALIDATED, ERROR
     storage_path TEXT,               -- Percorso relativo nello storage gestito o key cloud
     file_hash TEXT,                  -- Hash MD5/SHA-256 del file DVW per verifica integrità
+    home_sets_won INTEGER DEFAULT 0,
+    away_sets_won INTEGER DEFAULT 0,
+    final_score TEXT DEFAULT '0 - 0',
+    set_scores TEXT DEFAULT '',
+    sets_count INTEGER DEFAULT 0,
+    events_count INTEGER DEFAULT 0,
+    logs_count INTEGER DEFAULT 0,
+    scout_author TEXT,
     FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL,
     FOREIGN KEY (home_team_id) REFERENCES teams(id) ON DELETE CASCADE,
     FOREIGN KEY (away_team_id) REFERENCES teams(id) ON DELETE CASCADE

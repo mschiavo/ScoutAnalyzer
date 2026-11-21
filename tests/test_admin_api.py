@@ -137,3 +137,44 @@ True;25-20;22;
     res_list = client.get("/api/matches", headers=admin_h)
     assert res_list.status_code == 200
     assert len(res_list.json()) == 0
+
+def test_admin_revalidate_single_match():
+    admin_h = get_admin_headers()
+    scout_h = get_scout_headers()
+
+    sample_content = b"""[3MATCH]
+15/10/2026;20.30.00;2026/2027;Campionato;Andata;;1;1;TEST_REVAL;1;Z;0;;;
+[3TEAMS]
+TH;Home Team;0;;;;;
+TV;Away Team;0;;;;;
+[3SET]
+True;8-5;16-10;21-15;25-20;22;
+[3PLAYERS-H]
+0;1;10;;;;;;;TEST;H;;;2;False;;;;;;
+[3PLAYERS-V]
+1;1;20;;;;;;;TEST;V;;;2;False;;;;;;
+[3SCOUT]
+*10SM#;;;;;;;;1;1;1;1;100;;10;11;12;13;14;15;20;21;22;23;24;25;
+"""
+    up_res = client.post(
+        "/api/audit/upload",
+        files={"file": ("test_reval_single.dvw", sample_content, "text/plain")},
+        headers=admin_h
+    )
+    assert up_res.status_code == 200
+    match_id = up_res.json()["match_id"]
+
+    # Scout cannot revalidate (403)
+    res_scout = client.post(f"/api/admin/matches/{match_id}/revalidate", headers=scout_h)
+    assert res_scout.status_code == 403
+
+    # Admin revalidates (200)
+    res_admin = client.post(f"/api/admin/matches/{match_id}/revalidate", headers=admin_h)
+    assert res_admin.status_code == 200
+    data = res_admin.json()
+    assert data["status"] == "SUCCESS"
+    assert data["match_id"] == match_id
+    assert "issues_count" in data
+    assert "match" in data
+    assert data["match"]["id"] == match_id
+

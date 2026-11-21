@@ -80,6 +80,14 @@ CREATE TABLE IF NOT EXISTS matches (
     status TEXT DEFAULT 'PENDING',   -- PENDING, VALIDATED, ERROR
     storage_path TEXT,               -- Percorso relativo nello storage gestito o key cloud
     file_hash TEXT,                  -- Hash MD5/SHA-256 del file DVW per verifica integrità
+    home_sets_won INTEGER DEFAULT 0,
+    away_sets_won INTEGER DEFAULT 0,
+    final_score TEXT DEFAULT '0 - 0',
+    set_scores TEXT DEFAULT '',
+    sets_count INTEGER DEFAULT 0,
+    events_count INTEGER DEFAULT 0,
+    logs_count INTEGER DEFAULT 0,
+    scout_author TEXT,
     FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL,
     FOREIGN KEY (home_team_id) REFERENCES teams(id) ON DELETE CASCADE,
     FOREIGN KEY (away_team_id) REFERENCES teams(id) ON DELETE CASCADE
@@ -250,13 +258,27 @@ def create_database(db_path: str = DB_PATH):
         if col_name not in existing_cols:
             cursor.execute(f"ALTER TABLE events ADD COLUMN {col_name} {col_type}")
 
-    # Migrazione colonne per matches (storage_path, file_hash)
+    # Migrazione colonne per matches (storage_path, file_hash, metriche di riepilogo)
     cursor.execute("PRAGMA table_info(matches)")
     m_cols = {r[1] for r in cursor.fetchall()}
     if "storage_path" not in m_cols:
         cursor.execute("ALTER TABLE matches ADD COLUMN storage_path TEXT")
     if "file_hash" not in m_cols:
         cursor.execute("ALTER TABLE matches ADD COLUMN file_hash TEXT")
+
+    new_match_cols = [
+        ("home_sets_won", "INTEGER DEFAULT 0"),
+        ("away_sets_won", "INTEGER DEFAULT 0"),
+        ("final_score", "TEXT DEFAULT '0 - 0'"),
+        ("set_scores", "TEXT DEFAULT ''"),
+        ("sets_count", "INTEGER DEFAULT 0"),
+        ("events_count", "INTEGER DEFAULT 0"),
+        ("logs_count", "INTEGER DEFAULT 0"),
+        ("scout_author", "TEXT")
+    ]
+    for col_name, col_type in new_match_cols:
+        if col_name not in m_cols:
+            cursor.execute(f"ALTER TABLE matches ADD COLUMN {col_name} {col_type}")
 
     # Inserimento ruoli standard pallavolo se non presenti
     standard_roles = [

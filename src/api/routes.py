@@ -117,15 +117,16 @@ def get_me(current_user: User = Depends(get_current_user)):
 def list_matches(current_user: User = Depends(get_current_user)):
     conn = get_db_connection()
     c = conn.cursor()
+    base_cols = """
+        m.id, m.match_code, m.scheduled_date, m.home_team_id, m.away_team_id,
+        m.home_sets_won, m.away_sets_won, m.final_score, m.set_scores,
+        m.sets_count, m.events_count, m.logs_count, m.scout_author,
+        ht.code as home_code, ht.name as home_name,
+        at.code as away_code, at.name as away_name
+    """
     if current_user.role == "ADMIN":
-        c.execute("""
-            SELECT 
-                m.id, m.match_code, m.scheduled_date, m.home_team_id, m.away_team_id,
-                ht.code as home_code, ht.name as home_name,
-                at.code as away_code, at.name as away_name,
-                (SELECT COUNT(*) FROM match_sets ms WHERE ms.match_id = m.id) as sets_count,
-                (SELECT COUNT(*) FROM events e WHERE e.match_id = m.id) as events_count,
-                (SELECT COUNT(*) FROM validation_logs vl WHERE vl.match_id = m.id) as logs_count
+        c.execute(f"""
+            SELECT {base_cols}
             FROM matches m
             LEFT JOIN teams ht ON m.home_team_id = ht.id
             LEFT JOIN teams at ON m.away_team_id = at.id
@@ -137,13 +138,7 @@ def list_matches(current_user: User = Depends(get_current_user)):
             return []
         placeholders = ",".join("?" for _ in current_user.team_ids)
         query = f"""
-            SELECT 
-                m.id, m.match_code, m.scheduled_date, m.home_team_id, m.away_team_id,
-                ht.code as home_code, ht.name as home_name,
-                at.code as away_code, at.name as away_name,
-                (SELECT COUNT(*) FROM match_sets ms WHERE ms.match_id = m.id) as sets_count,
-                (SELECT COUNT(*) FROM events e WHERE e.match_id = m.id) as events_count,
-                (SELECT COUNT(*) FROM validation_logs vl WHERE vl.match_id = m.id) as logs_count
+            SELECT {base_cols}
             FROM matches m
             LEFT JOIN teams ht ON m.home_team_id = ht.id
             LEFT JOIN teams at ON m.away_team_id = at.id
@@ -152,49 +147,12 @@ def list_matches(current_user: User = Depends(get_current_user)):
         """
         c.execute(query, current_user.team_ids + current_user.team_ids)
 
-    raw_rows = [dict(r) for r in c.fetchall()]
     rows = []
-    for m in raw_rows:
-        c.execute("""
-            SELECT set_number, home_score, away_score, winning_team
-            FROM match_sets
-            WHERE match_id = ?
-            ORDER BY set_number ASC
-        """, (m["id"],))
-        sets = c.fetchall()
-
-        h_won = 0
-        a_won = 0
-        partials = []
-        for s in sets:
-            h_s = s[1] if isinstance(s, (tuple, list)) else s["home_score"]
-            a_s = s[2] if isinstance(s, (tuple, list)) else s["away_score"]
-            w_t = s[3] if isinstance(s, (tuple, list)) else s["winning_team"]
-            if w_t == "*":
-                h_won += 1
-            elif w_t == "a":
-                a_won += 1
-            elif h_s is not None and a_s is not None:
-                if h_s > a_s:
-                    h_won += 1
-                elif a_s > h_s:
-                    a_won += 1
-            if h_s is not None and a_s is not None:
-                partials.append(f"{h_s}-{a_s}")
-
-        m["home_sets_won"] = h_won
-        m["away_sets_won"] = a_won
-        m["final_score"] = f"{h_won} - {a_won}" if (h_won > 0 or a_won > 0) else "0 - 0"
-        m["set_scores"] = ", ".join(partials) if partials else "N.D."
-
-        code = m.get("match_code") or ""
-        sync_match = re.search(r'_sync_([a-zA-Z0-9]+)$', code, re.IGNORECASE)
-        if sync_match:
-            m["scout_author"] = sync_match.group(1)
-        else:
-            tail_match = re.search(r'_([a-zA-Z0-9]+)$', code, re.IGNORECASE)
-            m["scout_author"] = tail_match.group(1) if tail_match else "N.D."
-
+    for r in c.fetchall():
+        m = dict(r)
+        m["final_score"] = m.get("final_score") or "0 - 0"
+        m["set_scores"] = m.get("set_scores") or "N.D."
+        m["scout_author"] = m.get("scout_author") or "N.D."
         rows.append(m)
 
     conn.close()

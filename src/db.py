@@ -45,17 +45,53 @@ def get_sqlite_path() -> str:
     return "scoutanalyzer.db"
 
 
-class DbRow(dict):
+class DbRow:
     """Oggetto riga che supporta sia l'accesso per chiave dizionario (r['name'])
-    sia l'accesso per indice numerico (r[0]), identico al comportamento di sqlite3.Row."""
+    sia l'accesso per indice numerico (r[0]), identico al comportamento di sqlite3.Row.
+    L'iterazione (es. for a, b in row o list(row)) restituisce i valori delle colonne,
+    mentre .keys() restituisce i nomi delle colonne, supportando nativamente dict(row)."""
     def __init__(self, cols, vals):
-        super().__init__(zip(cols, vals))
+        self._cols = tuple(cols)
         self._vals = tuple(vals)
+        self._map = dict(zip(cols, vals))
 
     def __getitem__(self, item):
-        if isinstance(item, int):
+        if isinstance(item, (int, slice)):
             return self._vals[item]
-        return super().__getitem__(item)
+        return self._map[item]
+
+    def __iter__(self):
+        return iter(self._vals)
+
+    def __len__(self):
+        return len(self._vals)
+
+    def __contains__(self, key):
+        return key in self._map
+
+    def get(self, key, default=None):
+        return self._map.get(key, default)
+
+    def keys(self):
+        return list(self._cols)
+
+    def values(self):
+        return list(self._vals)
+
+    def items(self):
+        return list(self._map.items())
+
+    def __repr__(self):
+        return f"<DbRow {self._map}>"
+
+    def __eq__(self, other):
+        if isinstance(other, DbRow):
+            return self._vals == other._vals and self._cols == other._cols
+        if isinstance(other, (tuple, list)):
+            return self._vals == tuple(other)
+        if isinstance(other, dict):
+            return self._map == other
+        return False
 
 
 class PostgresCursorWrapper:
@@ -193,3 +229,89 @@ def get_db_connection(db_path: Optional[str] = None) -> Any:
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def refresh_match_summary_metrics(cursor: Any, match_id: int) -> Dict[str, Any]:
+    """Ricalcola e memorizza le colonne di riepilogo su matches per match_id.
+    Aggiorna home_sets_won, away_sets_won, final_score, set_scores, sets_count,
+    events_count, logs_count e scout_author per velocizzare list_matches (zero N+1).
+    """
+    cursor.execute("SELECT match_code FROM matches WHERE id = ?", (match_id,))
+    m_row = cursor.fetchone()
+    match_code = m_row[0] if m_row else ""
+
+    scout_author = None
+    if match_code:
+        parts = match_code.split("_")
+        if len(parts) > 1:
+            author_candidate = parts[-1]
+            if author_candidate.lower() == "sync" and len(parts) > 2:
+                author_candidate = parts[-2]
+            if author_candidate and len(author_candidate) <= 30:
+                scout_author = author_candidate
+
+    cursor.execute("""
+        SELECT set_number, home_score, away_score, winning_team
+        FROM match_sets
+        WHERE match_id = ?
+        ORDER BY set_number ASC
+    """, (match_id,))
+    sets = cursor.fetchall()
+
+    h_won = 0
+    a_won = 0
+    partials = []
+    for s in sets:
+        s_num = s[0] if isinstance(s, (tuple, list)) else s["set_number"]
+        h_s = s[1] if isinstance(s, (tuple, list)) else s["home_score"]
+        a_s = s[2] if isinstance(s, (tuple, list)) else s["away_score"]
+        w_t = s[3] if isinstance(s, (tuple, list)) else s["winning_team"]
+        if w_t == "*":
+            h_won += 1
+        elif w_t == "a":
+            a_won += 1
+        elif h_s is not None and a_s is not None:
+            if h_s > a_s:
+                h_won += 1
+            elif a_s > h_s:
+                a_won += 1
+        if h_s is not None and a_s is not None:
+            partials.append(f"{h_s}-{a_s}")
+
+    final_score = f"{h_won} - {a_won}" if (h_won > 0 or a_won > 0) else "0 - 0"
+    set_scores_str = ", ".join(partials) if partials else ""
+    sets_count = len(sets)
+
+    cursor.execute("SELECT COUNT(*) FROM events WHERE match_id = ?", (match_id,))
+    ev_row = cursor.fetchone()
+    events_count = ev_row[0] if ev_row else 0
+
+    cursor.execute("SELECT COUNT(*) FROM validation_logs WHERE match_id = ?", (match_id,))
+    log_row = cursor.fetchone()
+    logs_count = log_row[0] if log_row else 0
+
+    cursor.execute("""
+        UPDATE matches SET
+            home_sets_won = ?,
+            away_sets_won = ?,
+            final_score = ?,
+            set_scores = ?,
+            sets_count = ?,
+            events_count = ?,
+            logs_count = ?,
+            scout_author = ?
+        WHERE id = ?
+    """, (h_won, a_won, final_score, set_scores_str, sets_count, events_count, logs_count, scout_author, match_id))
+
+    return {
+        "match_id": match_id,
+        "home_sets_won": h_won,
+        "away_sets_won": a_won,
+        "final_score": final_score,
+        "set_scores": set_scores_str,
+        "sets_count": sets_count,
+        "events_count": events_count,
+        "logs_count": logs_count,
+        "scout_author": scout_author
+    }
+

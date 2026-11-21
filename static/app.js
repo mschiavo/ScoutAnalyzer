@@ -314,6 +314,10 @@ function setupEventListeners() {
   if (btnBackToDashboard) {
     btnBackToDashboard.addEventListener("click", () => switchView("dashboard"));
   }
+  const btnAdminRevalAll = document.getElementById("btn-admin-revalidate-all");
+  if (btnAdminRevalAll) {
+    btnAdminRevalAll.addEventListener("click", handleAdminRevalidateAllMatches);
+  }
   const btnClearAllMatchesPage = document.getElementById("btn-clear-all-matches-page");
   if (btnClearAllMatchesPage) {
     btnClearAllMatchesPage.addEventListener("click", clearAllMatches);
@@ -384,8 +388,7 @@ function populateMatchSelect() {
     opt.value = m.id;
     const home = m.home_name || m.home_code || "Casa";
     const away = m.away_name || m.away_code || "Ospite";
-    const date = m.scheduled_date ? ` (${m.scheduled_date})` : "";
-    opt.textContent = `${home} vs ${away} — ${m.match_code}${date}`;
+    opt.textContent = `${home} - ${away}`;
     matchSelect.appendChild(opt);
   });
 }
@@ -422,6 +425,10 @@ async function selectMatch(matchId) {
     state.currentMatchDetail = await detailRes.json();
     state.events = await eventsRes.json();
     state.logs = await logsRes.json();
+
+    if (filterErrorsOnly) {
+      state.errorsOnly = filterErrorsOnly.checked;
+    }
 
     updateMatchSummary();
     renderEventsTable();
@@ -482,22 +489,53 @@ function renderEventsTable() {
     if (state.selectedSet !== "all" && ev.set_number !== parseInt(state.selectedSet)) {
       return false;
     }
-    if (state.errorsOnly && ev.is_valid === 1 && !ev.error_note) {
+    const isError = ev.is_valid === 0 || ev.is_valid === false || Boolean(ev.error_note);
+    if (state.errorsOnly && !isError) {
       return false;
     }
     return true;
   });
 
-  eventsCountLabel.textContent = `${filteredEvents.length} azioni mostrate (su ${state.events.length} totali)`;
+  // Mostra eventuali anomalie a livello di set/gara registrate nei logs
+  const generalSetLogs = (state.errorsOnly && state.logs) ? state.logs.filter(l => {
+    if (!l.line_number || (l.raw_code && l.raw_code.startsWith("SET_"))) {
+      if (state.selectedSet === "all") return true;
+      if (l.raw_code === `SET_${state.selectedSet}`) return true;
+    }
+    return false;
+  }) : [];
 
-  if (filteredEvents.length === 0) {
-    eventsTbody.innerHTML = `<tr><td colspan="10" class="empty-state">Nessun evento corrisponde ai filtri selezionati.</td></tr>`;
+  const totalShown = filteredEvents.length + generalSetLogs.length;
+  eventsCountLabel.textContent = `${totalShown} elementi mostrati (su ${state.events.length} azioni totali)`;
+
+  if (totalShown === 0) {
+    const emptyMsg = state.errorsOnly
+      ? "Nessuna anomalia riscontrata per i filtri selezionati."
+      : "Nessun evento corrisponde ai filtri selezionati.";
+    eventsTbody.innerHTML = `<tr><td colspan="10" class="empty-state">${emptyMsg}</td></tr>`;
     return;
   }
 
+  // Visualizza prima le anomalie di set generali se il filtro errori e' attivo
+  generalSetLogs.forEach(g => {
+    const gTr = document.createElement("tr");
+    gTr.className = "has-error";
+    gTr.style.background = "rgba(239, 68, 68, 0.12)";
+    gTr.innerHTML = `
+      <td><span class="badge-danger">ALERT</span></td>
+      <td>${g.raw_code || "-"}</td>
+      <td colspan="5"><strong style="color: #f87171;">⚠️ ${escapeHtml(g.error_summary || "Anomalia rilevata")}</strong></td>
+      <td>-</td>
+      <td>-</td>
+      <td><span class="error-tag">${escapeHtml(g.parsed_status || "WARNING")}</span></td>
+    `;
+    eventsTbody.appendChild(gTr);
+  });
+
   filteredEvents.forEach((ev, idx) => {
     const tr = document.createElement("tr");
-    if (ev.is_valid === 0 || ev.error_note) {
+    const isError = ev.is_valid === 0 || ev.is_valid === false || Boolean(ev.error_note);
+    if (isError) {
       tr.classList.add("has-error");
     }
     if (idx === state.activeEventIndex) {
@@ -1055,8 +1093,20 @@ async function handleRevalidateMatches() {
   btnRevalidateMatches.textContent = "⏳ Rivalutazione...";
   try {
     const res = await authFetch("/api/admin/rules/revalidate", { method: "POST" });
+    if (!res.ok) {
+      let errDetail = "Errore durante la rivalutazione";
+      try {
+        const errJson = await res.json();
+        errDetail = errJson.detail || errJson.error || errDetail;
+      } catch (_) {
+        const text = await res.text();
+        if (text) errDetail = text;
+      }
+      throw new Error(errDetail);
+    }
     const data = await res.json();
-    alert(`Rivalutazione completata su ${data.revalidated_matches.length} partite!`);
+    const count = data.revalidated_matches ? data.revalidated_matches.length : 0;
+    alert(`Rivalutazione completata su ${count} partite!`);
     if (state.currentMatchId) selectMatch(state.currentMatchId);
   } catch (err) {
     alert(err.message);
@@ -1148,6 +1198,7 @@ async function renderAdminMatchesFullTable() {
         <td style="text-align: center;"><b style="color: ${logsColor};">${m.logs_count || 0}</b></td>
         <td style="text-align: center; white-space: nowrap;">
           <button class="btn btn-primary btn-sm" onclick="openMatchInDashboard(${m.id})">👁️ Apri Gara</button>
+          <button class="btn btn-secondary btn-sm" id="btn-reval-${m.id}" onclick="revalidateMatchFromAdmin(${m.id})">🔄 Valida Gara</button>
           <button class="btn btn-danger btn-sm" onclick="deleteMatch(${m.id}, '${escapeHtml(m.match_code)}')">🗑️ Elimina</button>
         </td>
       `;
@@ -1157,6 +1208,80 @@ async function renderAdminMatchesFullTable() {
     tbody.innerHTML = `<tr><td colspan="9" class="empty-state" style="color:#ef4444;">${err.message}</td></tr>`;
   }
 }
+
+async function revalidateMatchFromAdmin(matchId) {
+  const btn = document.getElementById(`btn-reval-${matchId}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "⏳...";
+  }
+  try {
+    const res = await authFetch(`/api/admin/matches/${matchId}/revalidate`, { method: "POST" });
+    if (!res.ok) {
+      let errDetail = "Errore durante la validazione della partita";
+      try {
+        const errJson = await res.json();
+        errDetail = errJson.detail || errJson.error || errDetail;
+      } catch (_) {
+        const text = await res.text();
+        if (text) errDetail = text;
+      }
+      throw new Error(errDetail);
+    }
+    const data = await res.json();
+    alert(`Validazione completata per gara #${matchId}! Anomalie rilevate: ${data.issues_count}`);
+    await renderAdminMatchesFullTable();
+    await loadMatches();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "🔄 Valida Gara";
+    }
+  }
+}
+window.revalidateMatchFromAdmin = revalidateMatchFromAdmin;
+
+async function handleAdminRevalidateAllMatches() {
+  const btn = document.getElementById("btn-admin-revalidate-all");
+  const count = (state.matches && state.matches.length) ? state.matches.length : 0;
+  if (count > 30) {
+    const ok = confirm(`Ci sono ${count} gare caricate a sistema (più di 30).\nLa validazione completa potrebbe richiedere del tempo.\n\nVuoi continuare?`);
+    if (!ok) return;
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "⏳ Validazione in corso...";
+  }
+  try {
+    const res = await authFetch("/api/admin/rules/revalidate", { method: "POST" });
+    if (!res.ok) {
+      let errDetail = "Errore durante la rivalutazione massiva";
+      try {
+        const errJson = await res.json();
+        errDetail = errJson.detail || errJson.error || errDetail;
+      } catch (_) {
+        const text = await res.text();
+        if (text) errDetail = text;
+      }
+      throw new Error(errDetail);
+    }
+    const data = await res.json();
+    const revalCount = data.revalidated_matches ? data.revalidated_matches.length : count;
+    alert(`Rivalutazione massiva completata con successo su ${revalCount} partite!`);
+    await renderAdminMatchesFullTable();
+    await loadMatches();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "🔄 Valida Tutte le Gare";
+    }
+  }
+}
+window.handleAdminRevalidateAllMatches = handleAdminRevalidateAllMatches;
 
 // --- ADMIN MATCHES MANAGEMENT ---
 async function openAdminMatchesModal() {
