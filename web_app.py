@@ -63,6 +63,16 @@ async def add_no_cache_header(request, call_next):
 app.include_router(api_router)
 app.include_router(admin_router)
 
+@app.get("/api/version")
+def get_app_version():
+    from src.db import get_sqlite_path, get_database_url
+    return {
+        "version": "1.3.0",
+        "database_type": "postgresql" if get_database_url() else "sqlite",
+        "sqlite_path": get_sqlite_path(),
+        "storage_backend": os.environ.get("STORAGE_BACKEND", "local")
+    }
+
 # Mount della directory dei file statici frontend (se presente)
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_dir):

@@ -104,7 +104,21 @@ const btnQuickDeleteMatch = document.getElementById("btn-quick-delete-match");
 document.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
   checkAuth();
+  fetchVersion();
 });
+
+async function fetchVersion() {
+  try {
+    const res = await fetch("/api/version");
+    if (!res.ok) return;
+    const v = await res.json();
+    const badge = document.getElementById("app-version-badge");
+    if (badge) {
+      badge.textContent = `v${v.version} (${v.database_type})`;
+      badge.title = `Database: ${v.sqlite_path || v.database_type} | Storage: ${v.storage_backend}`;
+    }
+  } catch (_) {}
+}
 
 // --- AUTHENTICATION & SLIDING SESSION ---
 async function authFetch(url, options = {}) {
@@ -360,15 +374,19 @@ function setupEventListeners() {
 }
 
 // --- MATCH DATA API & RENDER ---
-async function loadMatches() {
+async function loadMatches(preferredMatchId = null) {
   try {
     const res = await authFetch("/api/matches");
     if (!res.ok) return;
     state.matches = await res.json();
     populateMatchSelect();
     if (state.matches.length > 0) {
-      matchSelect.value = state.matches[0].id;
-      selectMatch(state.matches[0].id);
+      let targetId = state.matches[0].id;
+      if (preferredMatchId && state.matches.some(m => m.id === preferredMatchId)) {
+        targetId = preferredMatchId;
+      }
+      matchSelect.value = targetId;
+      await selectMatch(targetId);
     } else {
       resetMatchDisplay();
     }
@@ -404,6 +422,7 @@ function resetMatchDisplay() {
 }
 
 async function selectMatch(matchId) {
+  if (!matchId) return;
   state.currentMatchId = matchId;
   matchSelect.value = matchId;
   if (btnQuickDeleteMatch && state.currentUser && state.currentUser.role === "ADMIN") {
@@ -418,7 +437,8 @@ async function selectMatch(matchId) {
 
     if (!detailRes.ok) {
       const err = await detailRes.json().catch(() => ({}));
-      alert("Errore caricamento dettagli partita: " + (err.detail || detailRes.statusText));
+      console.warn(`[MatchDetail] Partita #${matchId} non caricabile:`, err.detail || detailRes.statusText);
+      resetMatchDisplay();
       return;
     }
 
@@ -772,10 +792,7 @@ async function uploadAndAuditFiles(fileList) {
     </div>
   `;
 
-  await loadMatches();
-  if (lastMatchId) {
-    selectMatch(lastMatchId);
-  }
+  await loadMatches(lastMatchId);
 
   setTimeout(() => {
     auditModal.classList.remove("open");
