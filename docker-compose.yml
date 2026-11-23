@@ -22,3 +22,4 @@ services:
       - ./src:/app/src
       - ./static:/app/static
       - ./database:/app/database
+      - ./web_app.py:/app/web_app.py
