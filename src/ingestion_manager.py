@@ -11,11 +11,13 @@ class IngestionManager:
     Implementa la Lazy Creation per squadre e atlete storiche non censite, e registra
     immediatamente i log per le violazioni sintattiche riscontrate dal parser.
     """
-    def __init__(self, config_path: str = DEFAULT_CONFIG_PATH):
+    def __init__(self, config_path: str = "config/config.json"):
         self.config_path = config_path
         with open(self.config_path, "r", encoding="utf-8") as f:
             self.config = json.load(f)
-        self.db_path = self.config.get("db_path", "scoutanalyzer.db")
+        cfg_db = self.config.get("db_path", "scoutanalyzer.db")
+        from src.db import get_sqlite_path
+        self.db_path = get_sqlite_path(cfg_db)
 
     def ingest_dvw(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
         """Ingestione completa dei dati nel database con persistenza delle validazioni sintattiche."""

@@ -24,11 +24,19 @@ def get_database_url() -> Optional[str]:
     return os.environ.get("DATABASE_URL")
 
 
-def get_sqlite_path() -> str:
-    """Restituisce il path del file SQLite locale."""
+def get_sqlite_path(db_path: Optional[str] = None) -> str:
+    """Restituisce il path del file SQLite locale.
+    Se SCOUT_DB_PATH è impostato nell'ambiente (es. in Docker), ha la precedenza
+    assoluta rispetto a qualsiasi path predefinito.
+    Un db_path esplicito di test (es. pytest tmp_path) viene rispettato.
+    """
     env_path = os.environ.get("SCOUT_DB_PATH")
+    if db_path and ("test" in db_path.lower() or "tmp" in db_path.lower()):
+        return db_path
     if env_path:
         return env_path
+    if db_path and db_path != "scoutanalyzer.db":
+        return db_path
     if os.path.exists(DEFAULT_CONFIG_PATH):
         try:
             import json
@@ -249,7 +257,8 @@ def get_db_connection(db_path: Optional[str] = None) -> Any:
             logger.warning(f"[DB] Errore connessione a PostgreSQL ({e}), fallback su SQLite locale.")
 
     # SQLite Fallback
-    path = db_path or get_sqlite_path()
+    path = get_sqlite_path(db_path)
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     conn = sqlite3.connect(path)
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.row_factory = sqlite3.Row

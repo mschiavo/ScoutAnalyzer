@@ -145,5 +145,23 @@ def test_refresh_match_summary_metrics(tmp_path):
     assert row[2] == "marco"
     conn.close()
 
+def test_scout_db_path_environment_resolution(monkeypatch, tmp_path):
+    from src.db import get_sqlite_path
+    from src.ingestion_manager import IngestionManager
+    from src.state_engine import MatchStateEngine
+
+    custom_path = str(tmp_path / "custom_docker_data" / "scoutanalyzer.db")
+    monkeypatch.setenv("SCOUT_DB_PATH", custom_path)
+
+    assert get_sqlite_path() == custom_path
+    assert get_sqlite_path("scoutanalyzer.db") == custom_path
+
+    ingester = IngestionManager()
+    assert ingester.db_path == custom_path
+
+    engine = MatchStateEngine(match_id=1)
+    assert engine.db_path == custom_path
+
+
 
 

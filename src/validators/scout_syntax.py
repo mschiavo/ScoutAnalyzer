@@ -1,12 +1,13 @@
 import sqlite3
 from typing import List, Dict, Any
 from src.models.validation_issue import ValidationIssue, Severity
+from src.db import get_sqlite_path
 
 class ScoutSyntaxValidator:
     def __init__(self, parsed_data: Dict[str, Any], raw_sections: Dict[str, List[str]], db_path: str = "scoutanalyzer.db"):
         self.parsed_data = parsed_data
         self.raw_sections = raw_sections
-        self.db_path = db_path
+        self.db_path = get_sqlite_path(db_path)
         self.issues: List[ValidationIssue] = []
 
         # Range e set di valori ammessi per i campi strutturati (da indice 0 a 11)

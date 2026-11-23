@@ -245,8 +245,8 @@ class StorageManager:
         target_db = db_path
         if not target_db:
             try:
-                from src.api.routes import get_db_path
-                target_db = get_db_path()
+                from src.db import get_sqlite_path
+                target_db = get_sqlite_path()
             except Exception:
                 target_db = "scoutanalyzer.db"
 
@@ -269,8 +269,8 @@ class StorageManager:
         target_db = target_db_path
         if not target_db:
             try:
-                from src.api.routes import get_db_path
-                target_db = get_db_path()
+                from src.db import get_sqlite_path
+                target_db = get_sqlite_path()
             except Exception:
                 target_db = "scoutanalyzer.db"
 

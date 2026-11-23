@@ -21,7 +21,9 @@ class MatchStateEngine:
         self.config_path = config_path
         with open(self.config_path, "r", encoding="utf-8") as f:
             self.config = json.load(f)
-        self.db_path = self.config.get("db_path", "scoutanalyzer.db")
+        cfg_db = self.config.get("db_path", "scoutanalyzer.db")
+        from src.db import get_sqlite_path
+        self.db_path = get_sqlite_path(cfg_db)
         self.issues: List[Dict[str, Any]] = []
 
         # Caricamento specifiche Data Volley e sequenze terminali consentite

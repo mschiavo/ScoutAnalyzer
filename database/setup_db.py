@@ -5,7 +5,8 @@ import sqlite3
 # Assicura che la radice del repository sia sempre in sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-DB_PATH = "scoutanalyzer.db"
+from src.db import get_sqlite_path
+DB_PATH = get_sqlite_path()
 
 SCHEMA_DDL = """
 PRAGMA foreign_keys = ON;
@@ -237,9 +238,11 @@ CREATE INDEX IF NOT EXISTS idx_user_teams_user ON user_teams(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_logins_user ON user_logins(user_id, logged_at);
 """
 
-def create_database(db_path: str = DB_PATH):
+def create_database(db_path: Optional[str] = None):
     """Inizializza o aggiorna il database unificato con tutte le 16 tabelle relazionali."""
-    conn = sqlite3.connect(db_path)
+    target_db = get_sqlite_path(db_path)
+    os.makedirs(os.path.dirname(os.path.abspath(target_db)), exist_ok=True)
+    conn = sqlite3.connect(target_db)
     cursor = conn.cursor()
     cursor.executescript(SCHEMA_DDL)
 

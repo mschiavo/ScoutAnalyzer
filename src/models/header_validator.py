@@ -17,7 +17,8 @@ class HeaderValidator:
         with open(config_path, "r", encoding="utf-8") as f:
             self.config = json.load(f)
 
-        self.db_path = self.config.get("db_path", "scoutanalyzer.db")
+        cfg_db = self.config.get("db_path", "scoutanalyzer.db")
+        self.db_path = get_sqlite_path(cfg_db)
         self.validation_cfg = self.config.get("validation", {})
         self.max_days_gap = self.validation_cfg.get("max_days_between_generator_and_lastchange", 1)
         self.min_players = self.validation_cfg.get("min_players_per_team", 6)
