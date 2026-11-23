@@ -21,6 +21,10 @@ dist/
 env/
 venv/
 
+# Archives & Deploy bundles
+*.zip
+*.tar.gz
+
 # Unit test / coverage reports
 htmlcov/
 .tox/
