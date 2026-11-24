@@ -55,7 +55,7 @@ class MatchStateEngine:
             cursor.execute("DELETE FROM actions WHERE match_id = ?", (self.match_id,))
             cursor.execute("DELETE FROM rotations WHERE match_id = ?", (self.match_id,))
             # Rimuoviamo solo i log semantici precedenti lasciando intatti i log sintattici generati dal parser
-            cursor.execute("DELETE FROM validation_logs WHERE match_id = ? AND parsed_status != 'SINTASSI'", (self.match_id,))
+            cursor.execute("DELETE FROM validation_logs WHERE match_id = ? AND validation_source != 'SYNTAX'", (self.match_id,))
 
             cursor.execute("SELECT home_team_id, away_team_id FROM matches WHERE id = ?", (self.match_id,))
             m_team_row = cursor.fetchone()
@@ -477,7 +477,7 @@ class MatchStateEngine:
             INSERT INTO validation_logs (match_id, file_name, line_number, raw_code, parsed_status, error_summary)
             VALUES (?, ?, ?, ?, 'ERROR', ?)
         """, (self.match_id, self.match_code, ev_idx, code, err_msg))
-        cursor.execute("UPDATE events SET is_valid = 0, error_note = ? WHERE id = ?", (err_msg, ev_id))
+        cursor.execute("UPDATE events SET is_valid = FALSE, error_note = ? WHERE id = ?", (err_msg, ev_id))
 
     def _is_permitted_terminal_followup(self, terminal_event: Dict[str, Any], skill: str, evaluation: str, team_code: str) -> bool:
         t_skill = terminal_event.get("skill")

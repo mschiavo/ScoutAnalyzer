@@ -11,6 +11,18 @@ from src.api.admin_routes import admin_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if os.environ.get("SCOUT_NAS_MODE") == "1":
+        from database.setup_db import create_database
+        from src.db import get_database_url
+        from src.storage_manager import StorageManager
+
+        if get_database_url() or os.environ.get("STORAGE_BACKEND", "local") != "local":
+            raise RuntimeError("Il deploy NAS richiede SQLite e storage locale.")
+        StorageManager()
+        create_database()
+        yield
+        return
+
     try:
         from src.db import get_database_url
         if not get_database_url():

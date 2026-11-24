@@ -1,6 +1,7 @@
 import sys
 import os
 import sqlite3
+from typing import Optional
 
 # Assicura che la radice del repository sia sempre in sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -189,6 +190,7 @@ CREATE TABLE IF NOT EXISTS validation_logs (
     line_number INTEGER,
     raw_code TEXT,
     parsed_status TEXT CHECK(parsed_status IN ('OK', 'WARNING', 'ERROR')) DEFAULT 'OK',
+    validation_source TEXT NOT NULL DEFAULT 'STATE',
     error_summary TEXT,
     validated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
@@ -283,6 +285,10 @@ def create_database(db_path: Optional[str] = None):
         if col_name not in m_cols:
             cursor.execute(f"ALTER TABLE matches ADD COLUMN {col_name} {col_type}")
 
+    cursor.execute("PRAGMA table_info(validation_logs)")
+    if "validation_source" not in {row[1] for row in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE validation_logs ADD COLUMN validation_source TEXT NOT NULL DEFAULT 'STATE'")
+
     # Inserimento ruoli standard pallavolo se non presenti
     standard_roles = [
         ("L", "Libero", "1"),
@@ -295,19 +301,30 @@ def create_database(db_path: Optional[str] = None):
         INSERT OR IGNORE INTO roles (code, name, dv_role_code) VALUES (?, ?, ?)
     """, standard_roles)
 
-    # Seeding utente admin predefinito se assente
-    cursor.execute("SELECT id FROM users WHERE username = 'admin'")
-    if not cursor.fetchone():
-        import bcrypt
-        admin_pwd_hash = bcrypt.hashpw(b"adminpassword", bcrypt.gensalt()).decode("utf-8")
-        cursor.execute("""
-            INSERT INTO users (username, password_hash, email, role, is_active)
-            VALUES (?, ?, ?, 'ADMIN', 1)
-        """, ("admin", admin_pwd_hash, "admin@scoutanalyzer.local"))
+    import bcrypt
+
+    cursor.execute("SELECT id, password_hash FROM users WHERE username = 'admin'")
+    admin = cursor.fetchone()
+    nas_mode = os.environ.get("SCOUT_NAS_MODE") == "1"
+    legacy_password = b"adminpassword"
+    rotate_legacy = nas_mode and admin and bcrypt.checkpw(legacy_password, admin[1].encode("utf-8"))
+    if not admin or rotate_legacy:
+        password = os.environ.get("SCOUT_ADMIN_PASSWORD", "").encode("utf-8")
+        if nas_mode and (not 12 <= len(password) <= 72 or password == legacy_password):
+            conn.close()
+            raise RuntimeError("Imposta SCOUT_ADMIN_PASSWORD con una password nuova di 12-72 byte.")
+        admin_pwd_hash = bcrypt.hashpw(password or legacy_password, bcrypt.gensalt()).decode("utf-8")
+        if admin:
+            cursor.execute("UPDATE users SET password_hash = ? WHERE id = ?", (admin_pwd_hash, admin[0]))
+        else:
+            cursor.execute("""
+                INSERT INTO users (username, password_hash, email, role, is_active)
+                VALUES (?, ?, ?, 'ADMIN', 1)
+            """, ("admin", admin_pwd_hash, "admin@scoutanalyzer.local"))
 
     conn.commit()
     conn.close()
-    print(f"Database SQLite '{db_path}' inizializzato con successo con lo schema DDL unificato (16 tabelle).")
+    print(f"Database SQLite '{target_db}' inizializzato con successo con lo schema DDL unificato (16 tabelle).")
 
 if __name__ == "__main__":
     import os

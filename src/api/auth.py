@@ -10,6 +10,8 @@ from pydantic import BaseModel
 from src.db import get_db_connection
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "scoutanalyzer3000-jwt-secret-volleyball-key-2026")
+if os.environ.get("SCOUT_NAS_MODE") == "1" and len(os.environ.get("JWT_SECRET", "")) < 32:
+    raise RuntimeError("Imposta JWT_SECRET con almeno 32 caratteri per il deploy NAS.")
 JWT_ALGORITHM = "HS256"
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)

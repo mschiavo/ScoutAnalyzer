@@ -49,6 +49,11 @@ class IngestionManager:
             cursor.execute("SELECT id FROM matches WHERE match_code = ?", (match_code,))
             match_id = cursor.fetchone()[0]
 
+            # Rimuove i dati derivati dalla versione precedente del file.
+            for table in ("events", "actions", "rotations", "validation_logs"):
+                cursor.execute(f"DELETE FROM {table} WHERE match_id = ?", (match_id,))
+            cursor.execute("DELETE FROM match_sets WHERE match_id = ?", (match_id,))
+
             # 3. Inserimento Set (match_sets)
             set_id_map = {}
             for s in parsed_data.get("sets", []):
@@ -66,24 +71,25 @@ class IngestionManager:
                 cursor.execute("SELECT id FROM match_sets WHERE match_id = ? AND set_number = ?", (match_id, set_num))
                 set_id_map[set_num] = cursor.fetchone()[0]
 
-            for fallback_set in range(1, 6):
+            event_sets = {event.get("set_number", 1) for event in parsed_data.get("events", [])}
+            for fallback_set in sorted(event_sets):
                 if fallback_set not in set_id_map:
                     cursor.execute("""
-                        INSERT OR IGNORE INTO match_sets (match_id, set_number) VALUES (?, ?)
+                        INSERT INTO match_sets (match_id, set_number, home_score, away_score)
+                        VALUES (?, ?, NULL, NULL)
                     """, (match_id, fallback_set))
                     cursor.execute("SELECT id FROM match_sets WHERE match_id = ? AND set_number = ?", (match_id, fallback_set))
                     set_id_map[fallback_set] = cursor.fetchone()[0]
 
             # 4. Inserimento Eventi Play-by-Play (events)
             events_data = parsed_data.get("events", [])
-            cursor.execute("DELETE FROM events WHERE match_id = ?", (match_id,))
 
             events_to_insert = []
             syntax_errors = []
 
             for ev in events_data:
                 set_num = ev.get("set_number", 1)
-                set_id = set_id_map.get(set_num, set_id_map.get(1))
+                set_id = set_id_map[set_num]
                 team_code = ev.get("team_code", "*")
                 shirt_number = ev.get("shirt_number")
 
@@ -158,8 +164,8 @@ class IngestionManager:
             # Persistiamo gli eventuali log di errore sintattico
             if syntax_errors:
                 cursor.executemany("""
-                    INSERT INTO validation_logs (match_id, file_name, line_number, raw_code, parsed_status, error_summary)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO validation_logs (match_id, file_name, line_number, raw_code, parsed_status, error_summary, validation_source)
+                    VALUES (?, ?, ?, ?, ?, ?, 'SYNTAX')
                 """, syntax_errors)
 
             from src.db import refresh_match_summary_metrics

@@ -33,3 +33,40 @@ def test_ingest_native_lineups(tmp_path):
     row = c.fetchone()
     assert row == (18, 9, 2, 1, 398)
     conn.close()
+
+
+def test_reimport_replaces_removed_sets_and_preserves_current_syntax_logs(tmp_path):
+    from src.state_engine import MatchStateEngine
+
+    db_file = str(tmp_path / "reimport.db")
+    create_database(db_file)
+    ingester = IngestionManager()
+    ingester.db_path = db_file
+    parsed = {
+        "match_info": {"match_code": "REIMPORT"},
+        "sets": [
+            {"set_number": 1, "home_score": 25, "away_score": 20},
+            {"set_number": 2, "home_score": 20, "away_score": 25},
+        ],
+        "events": [
+            {"event_index": 1, "set_number": 1, "is_valid": 0, "error_note": "Vecchio"},
+        ],
+    }
+    match_id = ingester.ingest_dvw(parsed)["match_id"]
+
+    parsed["sets"].pop()
+    parsed["events"][0]["error_note"] = "Corrente"
+    assert ingester.ingest_dvw(parsed)["match_id"] == match_id
+    engine = MatchStateEngine(match_id)
+    engine.db_path = db_file
+    engine.process_match()
+
+    with sqlite3.connect(db_file) as conn:
+        assert conn.execute(
+            "SELECT final_score, set_scores, sets_count, logs_count FROM matches WHERE id = ?",
+            (match_id,),
+        ).fetchone() == ("1 - 0", "25-20", 1, 1)
+        assert conn.execute(
+            "SELECT parsed_status, validation_source, error_summary FROM validation_logs WHERE match_id = ?",
+            (match_id,),
+        ).fetchall() == [("ERROR", "SYNTAX", "Corrente")]

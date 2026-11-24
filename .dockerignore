@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+data/
+storage/
+scoutanalyzer.db*
+**/__pycache__/
+.pytest_cache/
+.venv/
+*.zip
+*.tar.gz

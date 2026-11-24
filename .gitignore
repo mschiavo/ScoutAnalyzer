@@ -75,3 +75,6 @@ out/
 # Managed storage for uploaded DVW files
 storage/dvw/*
 !storage/dvw/.gitkeep
+
+# Dati locali del deploy Synology
+/data/

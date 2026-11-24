@@ -179,6 +179,7 @@ CREATE TABLE IF NOT EXISTS validation_logs (
     line_number INTEGER,
     raw_code TEXT,
     parsed_status TEXT CHECK(parsed_status IN ('OK', 'WARNING', 'ERROR')) DEFAULT 'OK',
+    validation_source TEXT NOT NULL DEFAULT 'STATE',
     error_summary TEXT,
     validated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE

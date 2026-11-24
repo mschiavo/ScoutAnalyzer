@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS validation_logs (
     line_number INTEGER,
     raw_code TEXT,
     parsed_status TEXT,
+    validation_source TEXT NOT NULL DEFAULT 'STATE',
     error_summary TEXT,
     validated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -215,6 +216,7 @@ def setup_and_seed_postgres():
                 ALTER TABLE validation_logs ADD COLUMN IF NOT EXISTS line_number INTEGER;
                 ALTER TABLE validation_logs ADD COLUMN IF NOT EXISTS parsed_status TEXT;
                 ALTER TABLE validation_logs ADD COLUMN IF NOT EXISTS error_summary TEXT;
+                ALTER TABLE validation_logs ADD COLUMN IF NOT EXISTS validation_source TEXT NOT NULL DEFAULT 'STATE';
                 ALTER TABLE validation_logs ADD COLUMN IF NOT EXISTS validated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
                 ALTER TABLE matches ADD COLUMN IF NOT EXISTS home_sets_won INTEGER DEFAULT 0;
                 ALTER TABLE matches ADD COLUMN IF NOT EXISTS away_sets_won INTEGER DEFAULT 0;

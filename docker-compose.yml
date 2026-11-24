@@ -1,25 +1,18 @@
 services:
   scoutanalyzer:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: scoutanalyzer
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      - STORAGE_BACKEND=local
-      - SCOUT_DB_PATH=/app/data/scoutanalyzer.db
-      - JWT_SECRET_KEY=synology-scoutanalyzer-secret-key-change-me
-      - S3_ENDPOINT_URL=
-      - S3_ACCESS_KEY=
-      - S3_SECRET_KEY=
-      - S3_BUCKET_NAME=
+      SCOUT_NAS_MODE: "1"
+      SCOUT_DB_PATH: /app/data/scoutanalyzer.db
+      STORAGE_BACKEND: local
+      STORAGE_DIR: /app/storage/dvw
+      JWT_SECRET: "${JWT_SECRET:?Imposta JWT_SECRET nel file .env}"
+      SCOUT_ADMIN_PASSWORD: "${SCOUT_ADMIN_PASSWORD:-}"
     volumes:
       - ./data:/app/data
       - ./storage:/app/storage
       - ./config:/app/config
-      - ./src:/app/src
-      - ./static:/app/static
-      - ./database:/app/database
-      - ./web_app.py:/app/web_app.py
