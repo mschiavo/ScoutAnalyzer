@@ -1,0 +1,2 @@
+scripts/backup_synology.sh text eol=lf
+scripts/reset_synology.sh text eol=lf
