@@ -150,7 +150,10 @@ class DVWParser:
                         self.players_home.append({
                             "number": shirt_num,
                             "name": name,
+                            "last_name": parts[9].strip(),
+                            "first_name": parts[10].strip() if len(parts) > 10 else "",
                             "code": code,
+                            "code_from_file": bool(parts[8].strip()),
                             "is_libero": is_libero,
                             "role_code": role_code
                         })
@@ -168,7 +171,10 @@ class DVWParser:
                         self.players_visiting.append({
                             "number": shirt_num,
                             "name": name,
+                            "last_name": parts[9].strip(),
+                            "first_name": parts[10].strip() if len(parts) > 10 else "",
                             "code": code,
+                            "code_from_file": bool(parts[8].strip()),
                             "is_libero": is_libero,
                             "role_code": role_code
                         })

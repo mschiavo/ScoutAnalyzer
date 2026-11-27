@@ -1,9 +1,17 @@
 import os
 import json
+import logging
 from typing import Dict, List, Any, Optional
 from src.db import get_db_connection
 
 DEFAULT_CONFIG_PATH = "config/config.json"
+DEFAULT_MAX_SUBSTITUTIONS = 8
+logger = logging.getLogger(__name__)
+
+
+def get_max_substitutions(config):
+    value = config.get("validation", {}).get("max_substitutions_per_set", DEFAULT_MAX_SUBSTITUTIONS)
+    return value if type(value) is int and value >= 0 else DEFAULT_MAX_SUBSTITUTIONS
 
 class MatchStateEngine:
     """Motore a Stati e Validatore Semantico per ScoutAnalyzer.
@@ -21,6 +29,7 @@ class MatchStateEngine:
         self.config_path = config_path
         with open(self.config_path, "r", encoding="utf-8") as f:
             self.config = json.load(f)
+        self.max_substitutions = get_max_substitutions(self.config)
         cfg_db = self.config.get("db_path", "scoutanalyzer.db")
         from src.db import get_sqlite_path
         self.db_path = get_sqlite_path(cfg_db)
@@ -42,7 +51,7 @@ class MatchStateEngine:
         cursor = conn.cursor()
 
         try:
-            cursor.execute("SELECT match_code FROM matches WHERE id = ?", (self.match_id,))
+            cursor.execute("SELECT COALESCE(source_match_code, match_code), storage_path FROM matches WHERE id = ?", (self.match_id,))
             m_row = cursor.fetchone()
             self.match_code = m_row[0] if m_row else f"Match_{self.match_id}"
 
@@ -54,8 +63,17 @@ class MatchStateEngine:
 
             cursor.execute("DELETE FROM actions WHERE match_id = ?", (self.match_id,))
             cursor.execute("DELETE FROM rotations WHERE match_id = ?", (self.match_id,))
-            # Rimuoviamo solo i log semantici precedenti lasciando intatti i log sintattici generati dal parser
-            cursor.execute("DELETE FROM validation_logs WHERE match_id = ? AND validation_source != 'SYNTAX'", (self.match_id,))
+            cursor.execute("DELETE FROM validation_logs WHERE match_id = ? AND validation_source NOT IN ('SYNTAX', 'ROSTER', 'ROSTER_VARIATION')", (self.match_id,))
+            cursor.execute("""
+                UPDATE events SET is_valid = NOT EXISTS (
+                    SELECT 1 FROM validation_logs l WHERE l.match_id = events.match_id
+                    AND l.line_number = events.event_index AND l.validation_source = 'SYNTAX'
+                ), error_note = (
+                    SELECT l.error_summary FROM validation_logs l WHERE l.match_id = events.match_id
+                    AND l.line_number = events.event_index AND l.validation_source = 'SYNTAX'
+                    ORDER BY l.id LIMIT 1
+                ) WHERE match_id = ?
+            """, (self.match_id,))
 
             cursor.execute("SELECT home_team_id, away_team_id FROM matches WHERE id = ?", (self.match_id,))
             m_team_row = cursor.fetchone()
@@ -78,6 +96,14 @@ class MatchStateEngine:
                 self.libero_player_ids.add(row[0])
                 if row[1] is not None and row[2] is not None:
                     self.libero_shirt_numbers.add((row[1], row[2]))
+
+            roster = self._load_match_roster(cursor, m_row[1] if m_row else None)
+            self.match_roster_sides = set()
+            self.match_libero_shirts = set()
+            for side, shirt, is_libero in roster:
+                self.match_roster_sides.add(side)
+                if is_libero:
+                    self.match_libero_shirts.add((side, shirt))
 
             for set_id, set_number in sets:
                 cursor.execute("""
@@ -137,6 +163,33 @@ class MatchStateEngine:
             raise e
         finally:
             conn.close()
+
+    def _load_match_roster(self, cursor, storage_path):
+        query = "SELECT team_side, shirt_number, is_libero FROM match_roster_players WHERE match_id = ?"
+        cursor.execute(query, (self.match_id,))
+        roster = cursor.fetchall()
+        if roster or not storage_path:
+            return roster
+
+        from src.dvw_parser import DVWParser
+        from src.ingestion_manager import IngestionManager
+        from src.storage_manager import StorageManager
+
+        try:
+            path = StorageManager().get_dvw_local_path(storage_path)
+            parsed = DVWParser(path).parse()
+        except Exception:
+            logger.warning("Referto originale non disponibile per la gara %s", self.match_id, exc_info=True)
+            return roster
+        issues = []
+        IngestionManager._store_match_roster(cursor, self.match_id, parsed, issues)
+        if issues:
+            cursor.executemany("""
+                INSERT INTO validation_logs (match_id, file_name, raw_code, parsed_status, error_summary, validation_source)
+                VALUES (?, ?, 'ROSTER', 'WARNING', ?, 'ROSTER')
+            """, [(self.match_id, self.match_code, issue) for issue in issues])
+        cursor.execute(query, (self.match_id,))
+        return cursor.fetchall()
 
     def _process_set(self, cursor, set_id: int, set_number: int, events: List[Any]) -> (int, int):
         home_pos = [None] * 6
@@ -255,13 +308,13 @@ class MatchStateEngine:
                 t_char = code[0]
                 if t_char == '*':
                     home_substitutions_count += 1
-                    if home_substitutions_count > 6:
-                        err_msg = f"Superato il limite massimo di 6 sostituzioni per la squadra di Casa nel set {set_number} (effettuate: {home_substitutions_count})"
+                    if home_substitutions_count > self.max_substitutions:
+                        err_msg = f"Superato il limite massimo di {self.max_substitutions} sostituzioni per la squadra di Casa nel set {set_number} (effettuate: {home_substitutions_count})"
                         self._log_issue(cursor, ev_idx, code, err_msg, ev_id)
                 else:
                     away_substitutions_count += 1
-                    if away_substitutions_count > 6:
-                        err_msg = f"Superato il limite massimo di 6 sostituzioni per la squadra Ospite nel set {set_number} (effettuate: {away_substitutions_count})"
+                    if away_substitutions_count > self.max_substitutions:
+                        err_msg = f"Superato il limite massimo di {self.max_substitutions} sostituzioni per la squadra Ospite nel set {set_number} (effettuate: {away_substitutions_count})"
                         self._log_issue(cursor, ev_idx, code, err_msg, ev_id)
 
                 try:
@@ -325,7 +378,9 @@ class MatchStateEngine:
 
                 # Controllo divieto di battuta per il Libero
                 is_libero = False
-                if player_id is not None:
+                if team_code in self.match_roster_sides:
+                    is_libero = (team_code, shirt_number) in self.match_libero_shirts
+                elif player_id is not None:
                     is_libero = (player_id in self.libero_player_ids)
                 elif shirt_number is not None:
                     t_id = self.home_team_id if team_code == '*' else self.away_team_id

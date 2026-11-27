@@ -1,10 +1,44 @@
 import json
 import os
 import sqlite3
+import hashlib
 from typing import Dict, Any, List, Optional
-from src.db import get_db_connection
+from src.db import get_db_connection, scout_filename_metadata
 
 DEFAULT_CONFIG_PATH = "config/config.json"
+
+
+def scout_section_hash(content: bytes):
+    """Hash delle righe della sezione scout, ignorando solo la codifica dei newline."""
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        text = content.decode("latin-1")
+    lines, in_scout = [], False
+    for line in text.splitlines():
+        marker = line.strip().upper()
+        if marker.startswith("[") and marker.endswith("]"):
+            section = marker[1:-1]
+            if in_scout:
+                break
+            in_scout = section in {"3SCOUT", "SCOUT3"}
+            continue
+        if in_scout:
+            lines.append(line)
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest() if in_scout else None
+
+
+class DuplicateMatch(Exception):
+    def __init__(self, matches, incoming, identical=False):
+        self.matches = matches
+        self.incoming = incoming
+        self.identical = identical
+
+
+class UnknownRoster(Exception):
+    def __init__(self, teams):
+        self.teams = teams
+
 
 class IngestionManager:
     """Gestisce il salvataggio dei dati parsati da un file .dvw nel database relazionale.
@@ -19,32 +53,80 @@ class IngestionManager:
         from src.db import get_sqlite_path
         self.db_path = get_sqlite_path(cfg_db)
 
-    def ingest_dvw(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
+    def ingest_dvw(self, parsed_data: Dict[str, Any], *, audit_scope=None,
+                   giornata=None, replace_match_id=None, roster_policy=None,
+                   create_new=False, file_hash=None, scout_hash=None, save_file=None, replace_file_hash=None) -> Dict[str, Any]:
         """Ingestione completa dei dati nel database con persistenza delle validazioni sintattiche."""
         conn = get_db_connection(self.db_path)
         cursor = conn.cursor()
 
         try:
             # 1. Lazy Creation Campionato, Squadre e Atlete
-            championship_id = self._ensure_championship(cursor, parsed_data.get("match_info", {}))
+            self._ensure_championship(cursor, parsed_data.get("match_info", {}))
+            unknown, protected, roster_issues, roster_variations = [], set(), [], []
+            if roster_policy is not None:
+                from src.roster_manager import assess_dvw_rosters
+                parsed_data = {**parsed_data, "teams": dict(parsed_data.get("teams", {}))}
+                unknown, protected, roster_issues, roster_variations = assess_dvw_rosters(cursor, parsed_data)
             home_team_id, away_team_id = self._ensure_teams(cursor, parsed_data.get("teams", {}))
-            
-            home_players_map = self._ensure_players(cursor, home_team_id, parsed_data.get("players_home", []))
-            away_players_map = self._ensure_players(cursor, away_team_id, parsed_data.get("players_visiting", []))
 
-            # 2. Inserimento/Aggiornamento Partita (matches)
             match_info = parsed_data.get("match_info", {})
             match_code = match_info.get("match_code", "UNKNOWN_MATCH")
+            source_match_code = match_code if audit_scope is not None else None
+            replacement = None
+            duplicate_same_code = False
+            if audit_scope is not None:
+                if not isinstance(conn, sqlite3.Connection):
+                    cursor.execute("SELECT id FROM teams WHERE id IN (?, ?) ORDER BY id FOR UPDATE", (home_team_id, away_team_id))
+                duplicates = self._find_duplicate_matches(cursor, home_team_id, away_team_id,
+                                                          match_code, giornata, audit_scope, scout_hash)
+                teams = parsed_data.get("teams", {})
+                incoming = {"match_code": match_code, "home_name": teams.get("home_name") or teams.get("home_code"),
+                            "away_name": teams.get("away_name") or teams.get("away_code"),
+                            "scout_author": scout_filename_metadata(match_code)[1], "giornata": giornata}
+                identical = [match for match in duplicates if match["identical"]]
+                if identical:
+                    raise DuplicateMatch(identical, incoming, identical=True)
+                duplicate_same_code = any(match["internal_code"] == match_code for match in duplicates)
+                if replace_match_id is not None:
+                    replacement = next((match for match in duplicates if match["id"] == replace_match_id and match["replaceable"]), None)
+                    if replacement is None or (replace_file_hash is not None and replacement["file_hash"] != replace_file_hash):
+                        raise DuplicateMatch(duplicates, incoming)
+                elif duplicates and not create_new:
+                    # La stessa gara può avere due scout indipendenti (uno per rilevatore).
+                    # Chiediamo una scelta solo quando la sezione play-by-play è identica.
+                    duplicates = [match for match in duplicates if match["identical"]]
+                    if duplicates:
+                        raise DuplicateMatch(duplicates, incoming, identical=True)
+
+                if create_new or duplicate_same_code or (replacement and replacement["internal_code"] != match_code):
+                    match_code = f"{match_code} [{file_hash}]"
+
+            if unknown and roster_policy == "ask":
+                raise UnknownRoster(unknown)
+            if roster_policy == "skip":
+                protected.update(team["side"] for team in unknown)
+            home_players_map = self._ensure_players(cursor, home_team_id, parsed_data.get("players_home", []),
+                                                    register="home" not in protected, update_existing=roster_policy is None)
+            away_players_map = self._ensure_players(cursor, away_team_id, parsed_data.get("players_visiting", []),
+                                                    register="away" not in protected, update_existing=roster_policy is None)
+
+            # 2. Inserimento/Aggiornamento Partita (matches)
             date_played = match_info.get("date")
 
+            if replacement:
+                cursor.execute("UPDATE matches SET match_code = ? WHERE id = ?", (match_code, replacement["id"]))
             cursor.execute("""
-                INSERT INTO matches (match_code, scheduled_date, home_team_id, away_team_id, status)
-                VALUES (?, ?, ?, ?, 'PENDING')
+                INSERT INTO matches (match_code, scheduled_date, home_team_id, away_team_id, status, giornata, audit_scope, source_match_code)
+                VALUES (?, ?, ?, ?, 'PENDING', ?, ?, ?)
                 ON CONFLICT(match_code) DO UPDATE SET
                     scheduled_date = excluded.scheduled_date,
                     home_team_id = excluded.home_team_id,
-                    away_team_id = excluded.away_team_id
-            """, (match_code, date_played, home_team_id, away_team_id))
+                    away_team_id = excluded.away_team_id,
+                    giornata = COALESCE(excluded.giornata, matches.giornata),
+                    audit_scope = COALESCE(excluded.audit_scope, matches.audit_scope),
+                    source_match_code = COALESCE(excluded.source_match_code, matches.source_match_code)
+            """, (match_code, date_played, home_team_id, away_team_id, giornata, audit_scope, source_match_code))
 
             cursor.execute("SELECT id FROM matches WHERE match_code = ?", (match_code,))
             match_id = cursor.fetchone()[0]
@@ -53,6 +135,8 @@ class IngestionManager:
             for table in ("events", "actions", "rotations", "validation_logs"):
                 cursor.execute(f"DELETE FROM {table} WHERE match_id = ?", (match_id,))
             cursor.execute("DELETE FROM match_sets WHERE match_id = ?", (match_id,))
+            cursor.execute("DELETE FROM match_roster_players WHERE match_id = ?", (match_id,))
+            self._store_match_roster(cursor, match_id, parsed_data, roster_issues)
 
             # 3. Inserimento Set (match_sets)
             set_id_map = {}
@@ -167,17 +251,35 @@ class IngestionManager:
                     INSERT INTO validation_logs (match_id, file_name, line_number, raw_code, parsed_status, error_summary, validation_source)
                     VALUES (?, ?, ?, ?, ?, ?, 'SYNTAX')
                 """, syntax_errors)
+            if roster_issues:
+                cursor.executemany("""
+                    INSERT INTO validation_logs (match_id, file_name, raw_code, parsed_status, error_summary, validation_source)
+                    VALUES (?, ?, 'ROSTER', 'WARNING', ?, 'ROSTER')
+                """, [(match_id, match_code, issue) for issue in roster_issues])
+            if roster_variations:
+                cursor.executemany("""
+                    INSERT INTO validation_logs (match_id, file_name, raw_code, parsed_status, error_summary, validation_source)
+                    VALUES (?, ?, 'ROSTER', 'WARNING', ?, 'ROSTER_VARIATION')
+                """, [(match_id, match_code, issue) for issue in roster_variations])
 
             from src.db import refresh_match_summary_metrics
             refresh_match_summary_metrics(cursor, match_id)
 
+            storage_path = None
+            if save_file is not None:
+                storage_path = save_file(cursor, match_id, bool(replacement or create_new))
+                cursor.execute("UPDATE matches SET storage_path = ?, file_hash = ?, scout_hash = ? WHERE id = ?",
+                               (storage_path, file_hash, scout_hash, match_id))
             conn.commit()
             return {
                 "status": "SUCCESS",
                 "match_id": match_id,
-                "match_code": match_code,
+                "match_code": source_match_code or match_code,
+                "storage_path": storage_path,
                 "events_count": len(events_to_insert),
                 "syntax_issues_count": len(syntax_errors),
+                "roster_issues": roster_issues,
+                "roster_variations": roster_variations,
                 "sets_count": len(parsed_data.get("sets", []))
             }
         except Exception as e:
@@ -186,6 +288,50 @@ class IngestionManager:
         finally:
             conn.close()
 
+    def _find_duplicate_matches(self, cursor, home_id, away_id, match_code, round_number, scope, scout_hash):
+        cursor.execute("""
+            SELECT m.id, m.match_code, m.source_match_code, m.giornata, m.audit_scope, m.storage_path,
+                   m.home_team_id, m.away_team_id, m.scout_author, m.file_hash, m.scout_hash,
+                   ht.name AS home_name, at.name AS away_name
+            FROM matches m JOIN teams ht ON ht.id = m.home_team_id JOIN teams at ON at.id = m.away_team_id
+            WHERE m.match_code = ? OR m.source_match_code = ? OR m.scout_hash = ?
+               OR (m.home_team_id = ? AND m.away_team_id = ?)
+               OR (m.home_team_id = ? AND m.away_team_id = ?)
+            ORDER BY m.id
+        """, (match_code, match_code, scout_hash, home_id, away_id, away_id, home_id))
+        matches = []
+        for row in cursor.fetchall():
+            match = dict(row)
+            path = (match["storage_path"] or "").replace("\\", "/").split("/")
+            stored_scope = match["audit_scope"] or ("/".join(path[:-2]) if len(path) >= 5 else "")
+            same_scope = not stored_scope or stored_scope.upper().replace("/", "-") == scope.upper().replace("/", "-")
+            stored_code = match["source_match_code"] or match["match_code"]
+            filename_round, author = scout_filename_metadata(stored_code)
+            stored_round = filename_round or match["giornata"]
+            if stored_round is None and len(path) >= 5 and path[-2].isdigit():
+                stored_round = int(path[-2])
+            same_order = (match["home_team_id"], match["away_team_id"]) == (home_id, away_id)
+            reverse_order = (match["home_team_id"], match["away_team_id"]) == (away_id, home_id)
+            same_fixture = (same_order or reverse_order) and same_scope and round_number == stored_round
+            stored_author = author or match["scout_author"]
+            stored_scout_hash = match["scout_hash"]
+            if same_fixture and scout_hash and not stored_scout_hash and match["storage_path"]:
+                try:
+                    from src.storage_manager import StorageManager
+                    stored_scout_hash = scout_section_hash(StorageManager().get_dvw_bytes(match["storage_path"]))
+                    if stored_scout_hash:
+                        cursor.execute("UPDATE matches SET scout_hash = ? WHERE id = ?", (stored_scout_hash, match["id"]))
+                except Exception:
+                    pass
+            identical = bool(same_fixture and scout_hash and scout_hash == stored_scout_hash)
+            if same_fixture:
+                matches.append({"id": match["id"], "match_code": stored_code, "internal_code": match["match_code"],
+                                "home_name": match["home_name"], "away_name": match["away_name"],
+                                "scout_author": stored_author, "giornata": stored_round,
+                                "file_hash": match["file_hash"],
+                                "identical": identical, "replaceable": same_fixture or (same_order and same_scope and stored_round is None)})
+        return matches
+
     def _ensure_championship(self, cursor: Any, match_info: Dict[str, Any]) -> int:
         season = match_info.get("season") or "2026/2027"
         name = match_info.get("league") or "Campionato B1F"
@@ -193,6 +339,33 @@ class IngestionManager:
         cursor.execute("SELECT id FROM championships WHERE code = ?", (season,))
         row = cursor.fetchone()
         return row[0] if row else 1
+
+    @staticmethod
+    def _store_match_roster(cursor, match_id, parsed, issues):
+        roster = []
+        for side, key in (("*", "players_home"), ("a", "players_visiting")):
+            shirts = set()
+            for player in parsed.get(key, []):
+                number = str(player.get("number", ""))
+                if not number.isdigit():
+                    continue
+                shirt = int(number)
+                if shirt in shirts:
+                    issues.append(f"Referto {'casa' if side == '*' else 'ospite'}: numero di maglia {shirt} assegnato più volte.")
+                    continue
+                shirts.add(shirt)
+                names = (player.get("name") or "").split(maxsplit=1)
+                last = player.get("last_name", names[0] if names else "")
+                first = player.get("first_name", names[1] if len(names) > 1 else "")
+                role = player.get("role_code")
+                is_libero = bool(player.get("is_libero")) or str(role).upper() in ("1", "L")
+                roster.append((match_id, side, shirt, player.get("code"), first, last, role, int(is_libero)))
+        if roster:
+            cursor.executemany("""
+                INSERT INTO match_roster_players
+                    (match_id, team_side, shirt_number, player_code, first_name, last_name, role_code, is_libero)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, roster)
 
     def _ensure_teams(self, cursor: Any, teams: Dict[str, Any]) -> (int, int):
         home_code = teams.get("home_code", "HOME")
@@ -211,18 +384,31 @@ class IngestionManager:
 
         return home_id, away_id
 
-    def _ensure_players(self, cursor: Any, team_id: int, players: List[Dict[str, Any]]) -> Dict[str, int]:
+    def _ensure_players(self, cursor: Any, team_id: int, players: List[Dict[str, Any]], *,
+                        register=True, update_existing=True) -> Dict[str, int]:
         players_map = {}
         for p in players:
             shirt = str(p.get("number", "")).strip()
             name = p.get("name", "").strip()
-            code = p.get("code", f"P_{team_id}_{shirt}").strip()
+            code = (p.get("code") or f"P_{team_id}_{shirt}").strip()
+            if not update_existing and not p.get("code_from_file", True):
+                code = f"P_{team_id}_{shirt}"
             if not shirt:
                 continue
 
+            if not register:
+                cursor.execute("""
+                    SELECT p.id FROM players p JOIN team_players tp ON tp.player_id = p.id
+                    WHERE tp.team_id = ? AND tp.valid_to IS NULL AND p.code = ?
+                """, (team_id, code))
+                player = cursor.fetchone()
+                if player:
+                    players_map[shirt] = player[0]
+                continue
+
             parts = name.split()
-            last_name = parts[0] if parts else f"Player_{shirt}"
-            first_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+            last_name = p.get("last_name") or (parts[0] if parts else f"Player_{shirt}")
+            first_name = p.get("first_name", " ".join(parts[1:]))
 
             is_libero = p.get("is_libero", False)
             role_code = str(p.get("role_code", "")).strip()
@@ -238,13 +424,16 @@ class IngestionManager:
                 if r_row:
                     role_id = r_row[0]
 
-            cursor.execute("""
-                INSERT INTO players (code, first_name, last_name, role_id)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(code) DO UPDATE SET
+            conflict = "DO NOTHING"
+            if update_existing:
+                conflict = """DO UPDATE SET
                     first_name = excluded.first_name,
                     last_name = excluded.last_name,
                     role_id = COALESCE(excluded.role_id, players.role_id)
+                """
+            cursor.execute(f"""
+                INSERT INTO players (code, first_name, last_name, role_id)
+                VALUES (?, ?, ?, ?) ON CONFLICT(code) {conflict}
             """, (code, first_name, last_name, role_id))
 
             cursor.execute("SELECT id FROM players WHERE code = ?", (code,))

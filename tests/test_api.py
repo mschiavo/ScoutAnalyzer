@@ -83,6 +83,7 @@ True;25-20;22;
     response = client.post(
         "/api/audit/upload",
         files={"file": ("test_upload.dvw", sample_content, "text/plain")},
+        data={"roster_policy": "skip", "giornata": "06"},
         headers=headers
     )
     assert response.status_code == 200
@@ -112,6 +113,7 @@ True;25-20;22;
         "/api/audit/upload",
         files={"file": ("&01_test_match.dvw", sample_content, "text/plain")},
         data={
+            "roster_policy": "skip",
             "campionato": "2026-2027",
             "categoria": "B1F",
             "girone": "B",
@@ -148,6 +150,7 @@ True;8-5;16-10;21-15;25-22;23;
     res_up = client.post(
         "/api/audit/upload",
         files={"file": ("&And01_aduna-verona_sync_marco.dvw", sample_content, "text/plain")},
+        data={"roster_policy": "skip", "giornata": "05"},
         headers=headers
     )
     assert res_up.status_code == 200

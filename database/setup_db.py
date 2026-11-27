@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS matches (
     status TEXT DEFAULT 'PENDING',   -- PENDING, VALIDATED, ERROR
     storage_path TEXT,               -- Percorso relativo nello storage gestito o key cloud
     file_hash TEXT,                  -- Hash MD5/SHA-256 del file DVW per verifica integrità
+    scout_hash TEXT,                 -- Hash delle sole righe della sezione 3SCOUT
     home_sets_won INTEGER DEFAULT 0,
     away_sets_won INTEGER DEFAULT 0,
     final_score TEXT DEFAULT '0 - 0',
@@ -93,6 +94,19 @@ CREATE TABLE IF NOT EXISTS matches (
     FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL,
     FOREIGN KEY (home_team_id) REFERENCES teams(id) ON DELETE CASCADE,
     FOREIGN KEY (away_team_id) REFERENCES teams(id) ON DELETE CASCADE
+);
+
+-- Atlete, maglie e ruoli dichiarati nel referto della rilevazione
+CREATE TABLE IF NOT EXISTS match_roster_players (
+    match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+    team_side TEXT NOT NULL,
+    shirt_number INTEGER NOT NULL,
+    player_code TEXT,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    role_code TEXT,
+    is_libero INTEGER NOT NULL,
+    PRIMARY KEY (match_id, team_side, shirt_number)
 );
 
 -- 8. Tabella dei Set disputati
@@ -248,6 +262,10 @@ def create_database(db_path: Optional[str] = None):
     cursor = conn.cursor()
     cursor.executescript(SCHEMA_DDL)
 
+    cursor.execute("PRAGMA table_info(teams)")
+    if "roster_inactive" not in {row[1] for row in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE teams ADD COLUMN roster_inactive INTEGER NOT NULL DEFAULT 0")
+
     # Migrazione colonne se la tabella events esisteva già
     cursor.execute("PRAGMA table_info(events)")
     existing_cols = {r[1] for r in cursor.fetchall()}
@@ -270,8 +288,12 @@ def create_database(db_path: Optional[str] = None):
         cursor.execute("ALTER TABLE matches ADD COLUMN storage_path TEXT")
     if "file_hash" not in m_cols:
         cursor.execute("ALTER TABLE matches ADD COLUMN file_hash TEXT")
+    if "scout_hash" not in m_cols:
+        cursor.execute("ALTER TABLE matches ADD COLUMN scout_hash TEXT")
 
     new_match_cols = [
+        ("audit_scope", "TEXT"),
+        ("source_match_code", "TEXT"),
         ("home_sets_won", "INTEGER DEFAULT 0"),
         ("away_sets_won", "INTEGER DEFAULT 0"),
         ("final_score", "TEXT DEFAULT '0 - 0'"),
@@ -324,7 +346,7 @@ def create_database(db_path: Optional[str] = None):
 
     conn.commit()
     conn.close()
-    print(f"Database SQLite '{target_db}' inizializzato con successo con lo schema DDL unificato (16 tabelle).")
+    print(f"Database SQLite '{target_db}' inizializzato con successo con lo schema DDL unificato.")
 
 if __name__ == "__main__":
     import os

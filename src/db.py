@@ -16,6 +16,12 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+def scout_filename_metadata(match_code: str):
+    """Return the round and sharing account encoded in a standard scout filename."""
+    match = re.fullmatch(r"&(\d+)_([A-Za-z0-9]+)-([A-Za-z0-9]+)_(.+)", match_code or "")
+    return (int(match[1]), match[4]) if match else (None, None)
+
 DEFAULT_CONFIG_PATH = "config/config.json"
 
 
@@ -231,7 +237,10 @@ def _ensure_sqlite_matches_schema(conn: sqlite3.Connection):
                 ("sets_count", "INTEGER DEFAULT 0"),
                 ("events_count", "INTEGER DEFAULT 0"),
                 ("logs_count", "INTEGER DEFAULT 0"),
-                ("scout_author", "TEXT")
+                ("scout_author", "TEXT"),
+                ("audit_scope", "TEXT"),
+                ("source_match_code", "TEXT"),
+                ("scout_hash", "TEXT"),
             ]
             for col_name, col_type in new_cols:
                 if col_name not in cols:
@@ -271,12 +280,12 @@ def refresh_match_summary_metrics(cursor: Any, match_id: int) -> Dict[str, Any]:
     Aggiorna home_sets_won, away_sets_won, final_score, set_scores, sets_count,
     events_count, logs_count e scout_author per velocizzare list_matches (zero N+1).
     """
-    cursor.execute("SELECT match_code FROM matches WHERE id = ?", (match_id,))
+    cursor.execute("SELECT COALESCE(source_match_code, match_code) FROM matches WHERE id = ?", (match_id,))
     m_row = cursor.fetchone()
     match_code = m_row[0] if m_row else ""
 
-    scout_author = None
-    if match_code:
+    _, scout_author = scout_filename_metadata(match_code)
+    if match_code and not scout_author:
         parts = match_code.split("_")
         if len(parts) > 1:
             author_candidate = parts[-1]
@@ -321,7 +330,10 @@ def refresh_match_summary_metrics(cursor: Any, match_id: int) -> Dict[str, Any]:
     ev_row = cursor.fetchone()
     events_count = ev_row[0] if ev_row else 0
 
-    cursor.execute("SELECT COUNT(*) FROM validation_logs WHERE match_id = ?", (match_id,))
+    cursor.execute("""
+        SELECT COUNT(*) FROM validation_logs WHERE match_id = ?
+        AND NOT (COALESCE(validation_source, '') = 'ROSTER_VARIATION' AND COALESCE(parsed_status, '') = 'OK')
+    """, (match_id,))
     log_row = cursor.fetchone()
     logs_count = log_row[0] if log_row else 0
 

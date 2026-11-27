@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS teams (
     homestadium TEXT,
     group_id INTEGER,                -- A quale girone appartiene la squadra
     roster_code TEXT,                -- Codice per il download del file .sq (es. "2761")
+    roster_inactive INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL
 );
 
@@ -65,6 +66,8 @@ CREATE TABLE IF NOT EXISTS matches (
     group_id INTEGER,                -- Riferimento al girone di appartenenza
     match_code TEXT UNIQUE,          -- Codice file match DataVolley
     giornata INTEGER,                -- Numero della giornata (es. 1, 2, ...)
+    audit_scope TEXT,
+    source_match_code TEXT,
     home_team_id INTEGER NOT NULL,
     away_team_id INTEGER NOT NULL,
     scheduled_date TEXT,
@@ -82,6 +85,19 @@ CREATE TABLE IF NOT EXISTS matches (
     FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL,
     FOREIGN KEY (home_team_id) REFERENCES teams(id) ON DELETE CASCADE,
     FOREIGN KEY (away_team_id) REFERENCES teams(id) ON DELETE CASCADE
+);
+
+-- Atlete, maglie e ruoli dichiarati nel referto della rilevazione
+CREATE TABLE IF NOT EXISTS match_roster_players (
+    match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+    team_side TEXT NOT NULL,
+    shirt_number INTEGER NOT NULL,
+    player_code TEXT,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    role_code TEXT,
+    is_libero INTEGER NOT NULL,
+    PRIMARY KEY (match_id, team_side, shirt_number)
 );
 
 -- 8. Tabella dei Set disputati

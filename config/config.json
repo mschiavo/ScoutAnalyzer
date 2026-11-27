@@ -2,6 +2,7 @@
   "db_path": "scoutanalyzer.db",
   "volleynetwork_base_url": "https://volleynetworkitalia.it/data-files/volleynetworkitalia/dropbox/rosters/",
   "validation": {
+    "max_substitutions_per_set": 8,
     "max_days_between_generator_and_lastchange": 1,
     "require_libero": true,
     "min_players_per_team": 6

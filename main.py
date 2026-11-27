@@ -4,7 +4,7 @@ import sqlite3
 import json
 from src.dvw_parser import DVWParser
 from src.roster_manager import RosterManager
-from src.ingestion_manager import IngestionManager
+from src.ingestion_manager import IngestionManager, UnknownRoster
 from src.state_engine import MatchStateEngine
 from src.models.header_validator import HeaderValidator, Severity
 
@@ -27,6 +27,20 @@ def get_dvw_file_path() -> str:
     if not user_input:
         return default_path
     return user_input.strip('"')
+
+
+def ingest_with_roster_confirmation(parsed):
+    ingester = IngestionManager()
+    try:
+        result = ingester.ingest_dvw(parsed, roster_policy="ask")
+    except UnknownRoster as error:
+        names = ", ".join(f"{team['name']} ({team['code']})" for team in error.teams)
+        answer = input(f"Roster sconosciuti: {names}. Salvarli nel database? [s/N] ").strip().lower()
+        result = ingester.ingest_dvw(parsed, roster_policy="add" if answer == "s" else "skip")
+    for issue in result["roster_issues"]:
+        print(f" [ROSTER] {issue}")
+    return result
+
 
 def main():
     roster_mgr = RosterManager()
@@ -135,8 +149,7 @@ def main():
                 parser = DVWParser(file_path)
                 parsed = parser.parse()
 
-                ingester = IngestionManager()
-                result = ingester.ingest_dvw(parsed)
+                result = ingest_with_roster_confirmation(parsed)
 
                 print("\n -> [SUCCESSO] Ingestione completata a Database!")
                 print(f"    * Match Code: {result['match_code']} (ID: {result['match_id']})")
@@ -213,8 +226,7 @@ def main():
                     print(f"    [{h.severity.value}] {h.message}")
 
                 print(f"\n[FASE 2: INGESTION A DATABASE CON VALIDAZIONE SINTATTICA]")
-                ingester = IngestionManager()
-                i_res = ingester.ingest_dvw(parsed)
+                i_res = ingest_with_roster_confirmation(parsed)
                 print(f" -> Eventi salvati: {i_res['events_count']} | Errori sintassi in-line: {i_res['syntax_issues_count']}")
 
                 print(f"\n[FASE 3: STATE ENGINE & VALIDAZIONE SEMANTICA]")

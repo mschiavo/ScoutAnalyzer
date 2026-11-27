@@ -80,6 +80,18 @@ CREATE TABLE IF NOT EXISTS matches (
     scout_author TEXT
 );
 
+CREATE TABLE IF NOT EXISTS match_roster_players (
+    match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+    team_side TEXT NOT NULL,
+    shirt_number INTEGER NOT NULL,
+    player_code TEXT,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    role_code TEXT,
+    is_libero INTEGER NOT NULL,
+    PRIMARY KEY (match_id, team_side, shirt_number)
+);
+
 CREATE TABLE IF NOT EXISTS match_sets (
     id SERIAL PRIMARY KEY,
     match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
@@ -226,6 +238,9 @@ def setup_and_seed_postgres():
                 ALTER TABLE matches ADD COLUMN IF NOT EXISTS events_count INTEGER DEFAULT 0;
                 ALTER TABLE matches ADD COLUMN IF NOT EXISTS logs_count INTEGER DEFAULT 0;
                 ALTER TABLE matches ADD COLUMN IF NOT EXISTS scout_author TEXT;
+                ALTER TABLE matches ADD COLUMN IF NOT EXISTS audit_scope TEXT;
+                ALTER TABLE matches ADD COLUMN IF NOT EXISTS source_match_code TEXT;
+                ALTER TABLE teams ADD COLUMN IF NOT EXISTS roster_inactive INTEGER NOT NULL DEFAULT 0;
 
                 DO $$
                 BEGIN

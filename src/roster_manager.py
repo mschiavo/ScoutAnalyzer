@@ -9,6 +9,120 @@ from src.db import get_db_connection, get_sqlite_path
 
 DEFAULT_CONFIG_PATH = "config/config.json"
 
+
+def _normalized_name(value):
+    return " ".join((value or "").casefold().split())
+
+
+def assess_dvw_rosters(cursor, parsed):
+    """Resolve known teams and compare announced players with their saved official files."""
+    cursor.execute("SELECT id, code, name, roster_code, roster_inactive FROM teams")
+    teams = [dict(row) for row in cursor.fetchall()]
+    teams_by_code = {team["code"]: team for team in teams}
+    unknown = []
+    reference_sides = set()
+    issues = []
+    variations = []
+    cursor.execute("SELECT code, dv_role_code, name FROM roles")
+    role_names = {value: name for code, dv_code, name in cursor.fetchall() for value in (code, dv_code) if value}
+    manager = None
+    match_teams = parsed.get("teams", {})
+    for side, roster_key in (("home", "players_home"), ("away", "players_visiting")):
+        players = parsed.get(roster_key, [])
+        code = match_teams.get(f"{side}_code")
+        name = match_teams.get(f"{side}_name") or code
+        team = teams_by_code.get(code)
+        if team is None and name:
+            candidates = [candidate for candidate in teams if candidate["roster_code"]
+                          and _normalized_name(candidate["name"]) == _normalized_name(name)]
+            if len(candidates) == 1:
+                team = candidates[0]
+                if str(team["code"]).startswith("PENDING_A3F_B_") and code:
+                    cursor.execute("SELECT id FROM teams WHERE code = ? AND id != ?", (code, team["id"]))
+                    if cursor.fetchone() is None:
+                        cursor.execute("UPDATE teams SET code = ? WHERE id = ?", (code, team["id"]))
+                        team["code"] = code
+                        teams_by_code[code] = team
+                    else:
+                        issues.append(f"{team['name']}: il codice squadra DVW {code} è già assegnato a un'altra squadra.")
+                else:
+                    issues.append(f"{team['name']}: codice squadra nel DVW {code}, ufficiale {team['code']}.")
+                    match_teams[f"{side}_code"] = team["code"]
+        if not players:
+            continue
+        if team and (team["roster_code"] or team["roster_inactive"]):
+            reference_sides.add(side)
+            if name and _normalized_name(name) != _normalized_name(team["name"]):
+                other = [entry for entry in teams if entry["roster_code"]
+                         and _normalized_name(entry["name"]) == _normalized_name(name)]
+                if len(other) == 1:
+                    issues.append(f"{name}: codice squadra nel DVW {code}, ufficiale {other[0]['code']}.")
+            if team["roster_inactive"]:
+                issues.append(f"{team['name']}: roster disattivato.")
+                continue
+            manager = manager or RosterManager()
+            content = manager.storage.get_roster_bytes(team["roster_code"])
+            official = manager._parse_sq_content(_decode_sq(content)) if content else []
+            if not official:
+                issues.append(f"{team['name']}: roster ufficiale non disponibile. Sincronizza il file .sq prima di confrontarlo.")
+                continue
+            differences, temporary = _compare_roster(team["name"], players, official, role_names)
+            issues.extend(differences)
+            variations.extend(temporary)
+            continue
+        if team:
+            cursor.execute("SELECT 1 FROM team_players WHERE team_id = ? AND valid_to IS NULL LIMIT 1", (team["id"],))
+            if cursor.fetchone():
+                continue
+        unknown.append({"side": side, "code": code, "name": name})
+    return unknown, reference_sides, issues, variations
+
+
+def _compare_roster(team_name, announced, official, role_names):
+    issues = []
+    variations = []
+    codes = {player["code"]: player for player in official}
+    for player in announced:
+        shirt = int(player["number"]) if player["number"].isdigit() else player["number"]
+        code = player["code"] if player.get("code_from_file", True) else None
+        name = player["name"]
+        expected = codes.get(code)
+        same_code = expected is not None
+        label = f"{team_name}, n. {shirt} {name}"
+        if expected is None:
+            by_name = [entry for entry in official if _normalized_name(f"{entry['last_name']} {entry['first_name']}") == _normalized_name(name)]
+            by_shirt = [entry for entry in official if entry["shirt_number"] == shirt]
+            candidates = by_name or by_shirt
+            expected = candidates[0] if len(candidates) == 1 else None
+            if expected is None:
+                description = f"codice {code}" if code else "codice assente nel DVW"
+                issues.append(f"{label}: atleta con {description} non identificata nel roster ufficiale.")
+                continue
+            issues.append(f"{label}: codice atleta nel DVW {code or 'assente'}, ufficiale {expected['code']}.")
+        official_name = f"{expected['last_name']} {expected['first_name']}".strip()
+        expected_names = (_normalized_name(expected["last_name"]), _normalized_name(expected["first_name"]))
+        if "last_name" in player:
+            name_matches = (_normalized_name(player["last_name"]), _normalized_name(player["first_name"])) == expected_names
+        else:
+            name_matches = _normalized_name(name) == _normalized_name(official_name)
+        if not name_matches:
+            issues.append(f"{label}: nome e cognome ufficiali {official_name}.")
+        if expected["shirt_number"] != shirt:
+            target = variations if same_code and name_matches else issues
+            target.append(f"{label}: numero di maglia ufficiale {expected['shirt_number']}.")
+        declared_role = "Libero" if player.get("is_libero") else role_names.get(player.get("role_code"))
+        official_role = role_names.get(expected.get("raw_role_code"))
+        if same_code and name_matches and declared_role and official_role and declared_role != official_role:
+            variations.append(f"{label}: ruolo a referto {declared_role}, ruolo ufficiale {official_role}.")
+    return issues, variations
+
+
+def _decode_sq(content):
+    try:
+        return content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return content.decode("latin-1")
+
 class RosterManager:
     """Gestisce il download, il backup intelligente, l'aggiornamento a DB (con soft-delete)
     dei file roster ufficiali .sq, e il controllo atlete.
@@ -49,7 +163,7 @@ class RosterManager:
         """
         conn = get_db_connection(self.db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT roster_code, name FROM teams WHERE code = ?", (team_code,))
+        cursor.execute("SELECT roster_code, name FROM teams WHERE code = ? AND roster_inactive = 0", (team_code,))
         team = cursor.fetchone()
         conn.close()
 
@@ -63,6 +177,8 @@ class RosterManager:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             new_content = response.content
+            if not self._parse_sq_content(_decode_sq(new_content)):
+                return {"status": "ERROR", "message": f"File roster non valido per {team_name} ({roster_code})."}
 
             backup_created = False
             backup_path = None
@@ -70,7 +186,7 @@ class RosterManager:
             old_content = self.storage.get_roster_bytes(roster_code)
             if old_content:
                 if hashlib.md5(new_content).hexdigest() != hashlib.md5(old_content).hexdigest():
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                     backup_path = self.storage.save_roster(roster_code, old_content, is_backup=True, timestamp=timestamp)
                     backup_created = True
                 else:
@@ -99,7 +215,7 @@ class RosterManager:
         """Scarica il file roster per tutte le squadre censite con un roster_code valido."""
         conn = get_db_connection(self.db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT code FROM teams WHERE roster_code IS NOT NULL AND roster_code != ''")
+        cursor.execute("SELECT code FROM teams WHERE roster_code IS NOT NULL AND roster_code != '' AND roster_inactive = 0")
         teams = cursor.fetchall()
         conn.close()
 
@@ -122,7 +238,7 @@ class RosterManager:
         cursor.execute("SELECT dv_role_code, id FROM roles WHERE dv_role_code IS NOT NULL")
         role_map = {str(row[0]): row[1] for row in cursor.fetchall()}
 
-        cursor.execute("SELECT id, roster_code, name FROM teams WHERE code = ?", (team_code,))
+        cursor.execute("SELECT id, roster_code, name FROM teams WHERE code = ? AND roster_inactive = 0", (team_code,))
         team = cursor.fetchone()
 
         if not team or not team[1]:
@@ -136,12 +252,10 @@ class RosterManager:
             conn.close()
             return {"status": "ERROR", "message": f"File roster non trovato nello storage per squadra '{team_code}' ({roster_code}.sq). Scaricare prima il file .sq."}
 
-        try:
-            content = content_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            content = content_bytes.decode("latin-1")
-
-        players_data = self._parse_sq_content(content)
+        players_data = self._parse_sq_content(_decode_sq(content_bytes))
+        if not players_data:
+            conn.close()
+            return {"status": "ERROR", "message": f"File roster non valido per {team_name} ({roster_code})."}
         current_sq_player_codes = set()
 
         for p in players_data:
@@ -217,7 +331,7 @@ class RosterManager:
         """Aggiorna il database per tutte le squadre con file .sq disponibili."""
         conn = get_db_connection(self.db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT code FROM teams WHERE roster_code IS NOT NULL AND roster_code != ''")
+        cursor.execute("SELECT code FROM teams WHERE roster_code IS NOT NULL AND roster_code != '' AND roster_inactive = 0")
         teams = cursor.fetchall()
         conn.close()
 

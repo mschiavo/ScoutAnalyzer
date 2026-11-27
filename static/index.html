@@ -41,7 +41,7 @@
         <span class="logo">🏐</span>
         <div>
           <h1>ScoutAnalyzer 3000 <span id="app-version-badge" style="font-size: 0.65rem; background: rgba(56, 189, 248, 0.2); color: #38bdf8; padding: 2px 6px; border-radius: 4px; vertical-align: middle;">v1.3.0</span></h1>
-          <span class="subtitle">Volleyball DVW & Lineup Engine (Serie B1F)</span>
+          <span class="subtitle">Volleyball DVW & Lineup Engine</span>
         </div>
       </div>
       <div class="header-actions">
@@ -63,7 +63,8 @@
               <button class="dropdown-item" id="btn-open-users-modal">👥 Utenti & Accessi</button>
               <button class="dropdown-item" id="btn-open-rules-modal">⚙️ Regole Validazione</button>
               <button class="dropdown-item" id="btn-open-logins-modal">📋 Log Accessi IP</button>
-              <button class="dropdown-item" id="btn-sync-rosters">🔄 Sincronizza Roster</button>
+              <button class="dropdown-item" id="btn-open-rosters">👥 Gestione Roster</button>
+              <button class="dropdown-item" id="btn-open-teams">Gestione Squadre</button>
             </div>
           </div>
 
@@ -316,6 +317,78 @@
       </section>
     </div> <!-- /view-admin-matches -->
 
+    <div id="view-admin-rosters" class="app-view" style="display: none;">
+      <section class="admin-view-header">
+        <div class="admin-view-title-block"><h2>👥 Gestione Roster</h2></div>
+        <div class="admin-view-actions">
+          <button id="btn-rosters-back" class="btn btn-secondary">⬅️ Torna alla Dashboard</button>
+          <button id="btn-sync-rosters" class="btn btn-outline-primary">Scarica e sincronizza tutti</button>
+          <button id="btn-import-local-rosters" class="btn btn-secondary">Importa file .sq locali</button>
+          <button id="btn-roster-teams" class="btn btn-secondary">Gestione Squadre</button>
+        </div>
+      </section>
+      <p id="roster-status" role="status"></p>
+      <section class="admin-matches-full-container">
+        <div class="table-wrapper-full">
+          <table class="simple-table admin-matches-table">
+            <thead><tr><th>Squadra</th><th>Codice squadra</th><th>Codice roster</th><th>Atlete attive</th><th>Azioni</th></tr></thead>
+            <tbody id="admin-rosters-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="admin-teams-modal">
+      <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="admin-teams-title">
+        <div class="modal-header">
+          <h3 id="admin-teams-title">Gestione Squadre</h3>
+          <button class="btn-close" id="btn-close-teams" aria-label="Chiudi">&times;</button>
+        </div>
+        <div class="modal-body">
+          <button type="button" id="btn-import-teams" class="btn btn-secondary">Importa B1F · Girone B · 2026/27</button>
+          <button type="button" id="btn-import-a3f-teams" class="btn btn-secondary">Importa A3F · Girone B · 2026/27</button>
+          <form id="admin-team-form">
+            <div class="form-group">
+              <label for="admin-team-select">Squadra</label>
+              <select id="admin-team-select" aria-describedby="admin-team-count"><option value="">Nuova squadra</option></select>
+              <small id="admin-team-count"></small>
+            </div>
+            <div class="form-group">
+              <label for="admin-team-code">Codice squadra nel DVW</label>
+              <input type="text" id="admin-team-code" required maxlength="40" />
+            </div>
+            <div class="form-group">
+              <label for="admin-team-name">Nome squadra</label>
+              <input type="text" id="admin-team-name" required maxlength="200" />
+            </div>
+            <div class="form-group">
+              <label for="admin-team-roster-code">Codice del file .sq</label>
+              <input type="text" id="admin-team-roster-code" inputmode="numeric" pattern="[0-9]+" maxlength="20" />
+            </div>
+            <button type="submit" class="btn btn-primary">Salva squadra</button>
+          </form>
+          <p id="admin-teams-status" role="status"></p>
+        </div>
+      </div>
+    </div>
+
+    <dialog class="modal-box" id="duplicate-audit-dialog" aria-labelledby="duplicate-audit-title">
+      <form method="dialog">
+        <div class="modal-header"><h3 id="duplicate-audit-title">Rilevazione già presente</h3></div>
+        <div class="modal-body">
+          <p id="duplicate-audit-incoming"></p>
+          <ul id="duplicate-audit-existing"></ul>
+          <label for="duplicate-audit-target">Rilevazione da sovrascrivere</label>
+          <select id="duplicate-audit-target"></select>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" value="discard" autofocus>Scarta file</button>
+          <button class="btn btn-outline-primary" value="replace" id="duplicate-audit-replace">Sovrascrivi</button>
+          <button class="btn btn-primary" value="new">Crea nuovo import</button>
+        </div>
+      </form>
+    </dialog>
+
     <!-- MODAL 1: AUDIT FILE DVW (ADMIN ONLY) -->
     <div class="modal-backdrop" id="audit-modal">
       <div class="modal-box">
@@ -352,6 +425,7 @@
                   <option value="B2F">B2F</option>
                   <option value="A1F">A1F</option>
                   <option value="A2F">A2F</option>
+                  <option value="A3F">A3F</option>
                   <option value="CF">CF</option>
                   <option value="DF">DF</option>
                   <option value="ALTRO">ALTRO</option>
@@ -456,7 +530,7 @@
                   </select>
                 </div>
                 <div class="form-group">
-                  <label>Squadre Autorizzate:</label>
+                  <label>Squadre autorizzate (gli ADMIN accedono a tutte):</label>
                   <div class="teams-checkbox-list" id="teams-checkbox-list">
                     <!-- Popolato dinamicamente da /api/admin/teams -->
                   </div>
@@ -493,10 +567,18 @@
     <div class="modal-backdrop" id="admin-rules-modal">
       <div class="modal-box modal-large">
         <div class="modal-header">
-          <h3>⚙️ Configuratore Regole Tocchi Correlati di Fine Azione</h3>
+          <h3>⚙️ Regole di validazione</h3>
           <button class="btn-close" id="btn-close-rules-modal">&times;</button>
         </div>
         <div class="modal-body">
+          <form id="substitution-settings-form" class="form-group">
+            <label for="max-substitutions-per-set">Sostituzioni massime per squadra e per set</label>
+            <div class="substitution-settings-controls">
+              <input type="number" id="max-substitutions-per-set" min="0" step="1" required disabled />
+              <button type="submit" class="btn btn-primary" disabled>Salva limite</button>
+            </div>
+            <small id="substitution-settings-status" role="status"></small>
+          </form>
           <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">
             Definisci quali colpi sono autorizzati a proseguire o chiudere l'azione dopo un tocco terminale (es. Attacco punto <code>A#</code> seguito da invasione a muro avversaria <code>B/</code>).
           </p>

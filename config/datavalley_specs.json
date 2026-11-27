@@ -121,6 +121,20 @@
         "="
       ],
       "must_be_opponent": false
+    },
+    {
+      "description": "Difesa errata (D=) dopo attacco punto (A#) o muro errato (B=)",
+      "terminal_skill": "A",
+      "terminal_eval": "#",
+      "followup_skills": [
+        "B",
+        "D"
+      ],
+      "followup_evals": [
+        "=",
+        "/"
+      ],
+      "must_be_opponent": true
     }
   ]
 }

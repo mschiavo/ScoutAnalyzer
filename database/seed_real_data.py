@@ -1,5 +1,34 @@
 import sqlite3
 
+B1F_B_2026_2027_TEAMS = (
+    ("VIV26", "Vivienergia Busnago", "Busnago (MB)", "2769"),
+    ("BRE26", "Brembo Volley Team ASD", "Treviolo (BG)", "2762"),
+    ("DON26", "Pallavolo Don Felice Colleoni", "Ponte Nossa (BG)", "2770"),
+    ("ACA26", "Volley Academy V&V", "Sondrio", "2765"),
+    ("IDR26", "Idras Torbole Casaglia", "Torbole Casaglia (BS)", "2768"),
+    ("NUO26", "Nuova BSTZ-OMSI Pol. Vobarno", "Vobarno (BS)", "2764"),
+    ("ROT26", "Rothoblaas Volano", "Volano (TN)", "2773"),
+    ("CRT26", "Cortina Express Imoco", "San Donà di Piave (VE)", "2760"),
+    ("VIC26", "Volksbank Vicenza Volley", "Vicenza", "2761"),
+    ("GPS26", "GPS Volley Group Schio", "Schio (VI)", "2771"),
+    ("IPA26", "IPAG Volley Noventa", "Noventa Vicentina (VI)", "2772"),
+    ("ISU26", "Isuzu Cerea", "Cerea (VR)", "2767"),
+    ("BLU26", "Blu Team Pavia Udine", "Pavia di Udine (UD)", "2766"),
+    ("PAD26", "Padova Volley S.S.D. A R.L.", "Padova", "2763")
+)
+
+# I codici .sq sono ufficiali; il codice DVW sarà risolto al primo scout importato.
+A3F_B_2026_2027_TEAMS = (
+    ("PENDING_A3F_B_2632", "Azimut Giorgione TV", "2632"),
+    ("PENDING_A3F_B_2633", "Smapiù Arena Volley VR", "2633"),
+    ("PENDING_A3F_B_2630", "Banca Annia Aduna Women PD", "2630"),
+    ("PENDING_A3F_B_2637", "V&V Modena", "2637"),
+    ("PENDING_A3F_B_2631", "Olympia di Navigazione RA", "2631"),
+    ("PENDING_A3F_B_2636", "CO.GE. Vesuvio Oplonti NA", "2636"),
+    ("PENDING_A3F_B_2635", "Zero5 Castellana Grotte BA", "2635"),
+    ("PENDING_A3F_B_2634", "Tonno Callipo Calabria VV", "2634"),
+)
+
 DB_PATH = "scoutanalyzer.db"
 
 def seed_real_data():
@@ -47,22 +76,8 @@ def seed_real_data():
     """, roles)
 
     # 4. Squadre reali del Girone B (Stagione 2026/2027)
-    teams = [
-        ("VIV26", "Vivienergia Busnago", "Busnago (MB)", group_id, "2769"),
-        ("BRE26", "Brembo Volley Team ASD", "Treviolo (BG)", group_id, "2762"),
-        ("DON26", "Pallavolo Don Felice Colleoni", "Ponte Nossa (BG)", group_id, "2770"),
-        ("ACA26", "Volley Academy V&V", "Sondrio", group_id, "2765"),
-        ("IDR26", "Idras Torbole Casaglia", "Torbole Casaglia (BS)", group_id, "2768"),
-        ("NUO26", "Nuova BSTZ-OMSI Pol. Vobarno", "Vobarno (BS)", group_id, "2764"),
-        ("ROT26", "Rothoblaas Volano", "Volano (TN)", group_id, "2773"),
-        ("CRT26", "Cortina Express Imoco", "San Donà di Piave (VE)", group_id, "2760"),
-        ("VIC26", "Volksbank Vicenza Volley", "Vicenza", group_id, "2761"),
-        ("GPS26", "GPS Volley Group Schio", "Schio (VI)", group_id, "2771"),
-        ("IPA26", "IPAG Volley Noventa", "Noventa Vicentina (VI)", group_id, "2772"),
-        ("ISU26", "Isuzu Cerea", "Cerea (VR)", group_id, "2767"),
-        ("BLU26", "Blu Team Pavia Udine", "Pavia di Udine (UD)", group_id, "2766"),
-        ("PAD26", "Padova Volley S.S.D. A R.L.", "Padova", group_id, "2763")
-    ]
+    teams = [(code, name, stadium, group_id, roster_code)
+             for code, name, stadium, roster_code in B1F_B_2026_2027_TEAMS]
     
     cursor.executemany("""
     INSERT OR IGNORE INTO teams (code, name, homestadium, group_id, roster_code) 

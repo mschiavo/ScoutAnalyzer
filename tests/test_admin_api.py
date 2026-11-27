@@ -102,6 +102,7 @@ True;25-20;22;
     up_res = client.post(
         "/api/audit/upload",
         files={"file": ("test_del_1.dvw", sample_content, "text/plain")},
+        data={"roster_policy": "skip"},
         headers=admin_h
     )
     assert up_res.status_code == 200
@@ -121,8 +122,8 @@ True;25-20;22;
     assert res_get.status_code == 404
 
     # 5. Carica due partite e prova lo svuotamento totale
-    client.post("/api/audit/upload", files={"file": ("del_a.dvw", sample_content, "text/plain")}, headers=admin_h)
-    client.post("/api/audit/upload", files={"file": ("del_b.dvw", sample_content, "text/plain")}, headers=admin_h)
+    client.post("/api/audit/upload", files={"file": ("del_a.dvw", sample_content, "text/plain")}, headers=admin_h, data={"roster_policy": "skip"})
+    client.post("/api/audit/upload", files={"file": ("del_b.dvw", sample_content, "text/plain")}, headers=admin_h, data={"roster_policy": "skip"})
 
     # Scout non puo' svuotare (403)
     res_scout_clear = client.delete("/api/admin/matches/clear", headers=scout_h)
@@ -159,6 +160,7 @@ True;8-5;16-10;21-15;25-20;22;
     up_res = client.post(
         "/api/audit/upload",
         files={"file": ("test_reval_single.dvw", sample_content, "text/plain")},
+        data={"roster_policy": "skip"},
         headers=admin_h
     )
     assert up_res.status_code == 200

@@ -306,8 +306,17 @@ function setupEventListeners() {
     });
   }
 
-  // Roster sync
-  btnSyncRosters.addEventListener("click", syncRosters);
+  document.getElementById("btn-open-rosters").addEventListener("click", () => switchView("admin-rosters"));
+  document.getElementById("btn-open-teams").addEventListener("click", openTeamManagement);
+  document.getElementById("btn-roster-teams").addEventListener("click", openTeamManagement);
+  document.getElementById("btn-close-teams").addEventListener("click", () => document.getElementById("admin-teams-modal").classList.remove("open"));
+  document.getElementById("btn-import-teams").addEventListener("click", importTeamCatalog);
+  document.getElementById("btn-import-a3f-teams").addEventListener("click", importA3FTeamCatalog);
+  document.getElementById("admin-team-form").addEventListener("submit", saveTeamSettings);
+  document.getElementById("admin-team-select").addEventListener("change", fillTeamSettings);
+  document.getElementById("btn-rosters-back").addEventListener("click", () => switchView("dashboard"));
+  btnSyncRosters.addEventListener("click", () => syncRosters(null, true));
+  document.getElementById("btn-import-local-rosters").addEventListener("click", () => syncRosters());
 
   // Admin Modals
   btnOpenUsersModal.addEventListener("click", openAdminUsersModal);
@@ -316,6 +325,7 @@ function setupEventListeners() {
 
   btnOpenRulesModal.addEventListener("click", openAdminRulesModal);
   btnCloseRulesModal.addEventListener("click", () => adminRulesModal.classList.remove("open"));
+  document.getElementById("substitution-settings-form").addEventListener("submit", saveSubstitutionSettings);
   btnAddRule.addEventListener("click", handleAddRule);
   btnRevalidateMatches.addEventListener("click", handleRevalidateMatches);
 
@@ -517,13 +527,15 @@ function renderEventsTable() {
   });
 
   // Mostra eventuali anomalie a livello di set/gara registrate nei logs
-  const generalSetLogs = (state.errorsOnly && state.logs) ? state.logs.filter(l => {
+  const generalSetLogs = (state.logs || []).filter(l => {
+    if (l.validation_source === "ROSTER_VARIATION" && l.parsed_status === "OK") return !state.errorsOnly && state.selectedSet === "all";
+    if (!state.errorsOnly) return false;
     if (!l.line_number || (l.raw_code && l.raw_code.startsWith("SET_"))) {
       if (state.selectedSet === "all") return true;
       if (l.raw_code === `SET_${state.selectedSet}`) return true;
     }
     return false;
-  }) : [];
+  });
 
   const totalShown = filteredEvents.length + generalSetLogs.length;
   eventsCountLabel.textContent = `${totalShown} elementi mostrati (su ${state.events.length} azioni totali)`;
@@ -539,16 +551,36 @@ function renderEventsTable() {
   // Visualizza prima le anomalie di set generali se il filtro errori e' attivo
   generalSetLogs.forEach(g => {
     const gTr = document.createElement("tr");
-    gTr.className = "has-error";
-    gTr.style.background = "rgba(239, 68, 68, 0.12)";
+    const isNote = g.validation_source === "ROSTER_VARIATION" && g.parsed_status === "OK";
+    if (!isNote) {
+      gTr.className = "has-error";
+      gTr.style.background = "rgba(239, 68, 68, 0.12)";
+    }
     gTr.innerHTML = `
-      <td><span class="badge-danger">ALERT</span></td>
-      <td>${g.raw_code || "-"}</td>
-      <td colspan="5"><strong style="color: #f87171;">⚠️ ${escapeHtml(g.error_summary || "Anomalia rilevata")}</strong></td>
+      <td>${isNote ? "Nota" : '<span class="badge-danger">ALERT</span>'}</td>
+      <td>${escapeHtml(g.raw_code || "-")}</td>
+      <td colspan="5"><strong>${escapeHtml(g.error_summary || "Anomalia rilevata")}</strong></td>
       <td>-</td>
       <td>-</td>
       <td><span class="error-tag">${escapeHtml(g.parsed_status || "WARNING")}</span></td>
     `;
+    if (g.validation_source === "ROSTER_VARIATION" && !isNote && state.currentUser?.role === "ADMIN") {
+      const button = document.createElement("button");
+      button.className = "btn btn-secondary btn-sm";
+      button.textContent = "Conferma variazioni";
+      button.addEventListener("click", async () => {
+        const match = state.currentMatchDetail.match;
+        const variations = state.logs.filter(log => log.validation_source === "ROSTER_VARIATION" && log.parsed_status === "WARNING");
+        try {
+          if (await confirmRosterVariations(match.id, match.file_hash, variations.map(log => log.error_summary))) {
+            await selectMatch(match.id);
+          }
+        } catch (error) {
+          alert(error.message);
+        }
+      });
+      gTr.cells[3].replaceChildren(button);
+    }
     eventsTbody.appendChild(gTr);
   });
 
@@ -709,8 +741,8 @@ function autoDetectMatchHierarchy(filename) {
   if (!filename) return;
   const lower = filename.toLowerCase();
 
-  // 1. Categoria & Girone: es. b1fb, b2fa, cfc, dfe, a1f, a2f
-  const catGirMatch = lower.match(/(b1f|b2f|a1f|a2f|cf|df)([a-z])\b/);
+  // Categoria & Girone nel codice file, es. b1fb, a3fa, cfc.
+  const catGirMatch = lower.match(/(?:^|[^a-z0-9])(b1f|b2f|a1f|a2f|a3f|cf|df)([a-z])(?=$|[^a-z0-9])/);
   if (catGirMatch) {
     const cat = catGirMatch[1].toUpperCase();
     const gir = catGirMatch[2].toUpperCase();
@@ -751,6 +783,9 @@ async function uploadAndAuditFiles(fileList) {
 
   let successCount = 0;
   let failCount = 0;
+  let discardedCount = 0;
+  const errors = [];
+  const rosterWarnings = [];
   let lastMatchId = null;
 
   for (let i = 0; i < files.length; i++) {
@@ -769,30 +804,39 @@ async function uploadAndAuditFiles(fileList) {
       formData.append("girone", gir);
       formData.append("giornata", gio);
 
-      const res = await authFetch("/api/audit/upload", {
-        method: "POST",
-        body: formData
+      const data = await submitMatchAudit(options => {
+        for (const [key, value] of Object.entries(options)) formData.set(key, value);
+        return authFetch("/api/audit/upload", { method: "POST", body: formData });
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || "Errore durante il caricamento");
+      if (!data) {
+        discardedCount++;
+        continue;
       }
       successCount++;
       lastMatchId = data.match_id;
+      rosterWarnings.push(...data.roster_issues.map(issue => `${file.name}: ${issue}`));
+      rosterWarnings.push(...(await pendingRosterVariations(data)).map(issue => `${file.name}: ${issue}`));
     } catch (err) {
       console.error(`Errore upload ${file.name}:`, err);
       failCount++;
+      errors.push(`${file.name}: ${err.message}`);
     }
   }
 
   auditStatus.innerHTML = `
     <div style="color:#10b981; font-weight:bold;">
-      ✅ Completato! ${successCount} file caricati con successo${failCount > 0 ? `, <span style="color:#ef4444;">${failCount} errori</span>` : ""}.
+      ${successCount} file caricati, ${discardedCount} scartati, ${failCount} errori.
+      ${errors.map(error => `<div style="color:#ef4444;">${escapeHtml(error)}</div>`).join("")}
+      ${rosterWarnings.map(warning => `<div class="error-tag">${escapeHtml(warning)}</div>`).join("")}
     </div>
   `;
 
   await loadMatches(lastMatchId);
+
+  if (failCount || rosterWarnings.length) {
+    btnRunAudit.disabled = false;
+    return;
+  }
 
   setTimeout(() => {
     auditModal.classList.remove("open");
@@ -816,7 +860,7 @@ async function runAuditFile() {
   btnRunAudit.disabled = true;
 
   try {
-    const res = await authFetch("/api/audit/file", {
+    const data = await submitMatchAudit(options => authFetch("/api/audit/file", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -824,25 +868,33 @@ async function runAuditFile() {
         campionato: camp,
         categoria: cat,
         girone: gir,
-        giornata: gio
+        giornata: gio,
+        ...options
       })
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.detail || "Errore durante l'audit");
+    }));
+    if (!data) {
+      auditStatus.textContent = "Caricamento scartato.";
+      btnRunAudit.disabled = false;
+      return;
     }
 
+    const issues = [...data.roster_issues, ...await pendingRosterVariations(data)];
     auditStatus.innerHTML = `
       <div style="color:#10b981; font-weight:bold;">✅ Audit completato con successo!</div>
       <div style="margin-top:6px; color:#cbd5e1;">
-        Partita: <b>${data.match_code}</b> | Storage: <code>${data.storage_path || "--"}</code><br>
+        Partita: <b>${escapeHtml(data.match_code)}</b> | Storage: <code>${escapeHtml(data.storage_path || "--")}</code><br>
         Eventi: ${data.events_count} | Set: ${data.sets_count}
+        ${issues.map(issue => `<div class="error-tag">${escapeHtml(issue)}</div>`).join("")}
       </div>
     `;
 
     await loadMatches();
     selectMatch(data.match_id);
+
+    if (issues.length) {
+      btnRunAudit.disabled = false;
+      return;
+    }
 
     setTimeout(() => {
       auditModal.classList.remove("open");
@@ -850,26 +902,308 @@ async function runAuditFile() {
     }, 1800);
 
   } catch (err) {
-    auditStatus.innerHTML = `<span style="color:#ef4444;">❌ ${err.message}</span>`;
+    auditStatus.textContent = err.message;
     btnRunAudit.disabled = false;
   }
 }
 
-async function syncRosters() {
-  btnSyncRosters.disabled = true;
-  btnSyncRosters.textContent = "⏳ Sincronizzazione...";
+async function confirmRosterVariations(matchId, hash, variations) {
+  if (!variations.length || !confirm(`Variazioni dichiarate a referto:\n${variations.join("\n")}\n\nConfermarle come note per questa rilevazione?`)) return false;
+  const res = await authFetch(`/api/admin/matches/${matchId}/confirm-roster-variations?file_hash=${encodeURIComponent(hash)}`, { method: "POST" });
+  if (!res.ok) throw new Error(await parseErrorResponse(res, "Impossibile confermare le variazioni"));
+  return true;
+}
+
+async function pendingRosterVariations(data) {
+  const variations = data.roster_variations || [];
+  try {
+    return await confirmRosterVariations(data.match_id, data.file_hash, variations) ? [] : variations;
+  } catch (error) {
+    return [...variations, error.message];
+  }
+}
+
+async function submitMatchAudit(submit) {
+  const options = {};
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await submit(options);
+    const data = await res.json();
+    if (res.ok) return data;
+    const detail = data.detail;
+    if (res.status === 409 && detail?.code === "identical_file") {
+      alert(`File identico già importato.\n${auditMatchSummary(detail.matches[0])}`);
+      return null;
+    }
+    if (res.status === 409 && detail?.code === "duplicate_match" && !options.replace_match_id && !options.create_new) {
+      const decision = await chooseDuplicateAudit(detail);
+      if (!decision) return null;
+      Object.assign(options, decision);
+      continue;
+    }
+    if (res.status === 409 && detail?.code === "unknown_rosters" && !options.roster_policy) {
+      const names = detail.teams.map(team => `${team.name} (${team.code})`).join(", ");
+      options.roster_policy = confirm(`Roster sconosciuti: ${names}.\n\nPremi OK per salvarli nel database oppure Annulla per importare solo la gara.`) ? "add" : "skip";
+      continue;
+    }
+    throw new Error(detail?.message || detail || "Errore durante il caricamento");
+  }
+  throw new Error("Impossibile completare le conferme di importazione.");
+}
+
+function auditMatchSummary(match) {
+  return `${match.home_name || "—"} (casa) · ${match.away_name || "—"} (ospite) · Rilevatore ${match.scout_author || "non indicato"} · Giornata ${match.giornata ?? "—"} · ${match.match_code}.dvw`;
+}
+
+function chooseDuplicateAudit({ incoming, matches }) {
+  const dialog = document.getElementById("duplicate-audit-dialog");
+  const existing = document.getElementById("duplicate-audit-existing");
+  const target = document.getElementById("duplicate-audit-target");
+  document.getElementById("duplicate-audit-incoming").textContent = `Nuovo file: ${auditMatchSummary(incoming)}`;
+  existing.replaceChildren(...matches.map(match => {
+    const item = document.createElement("li");
+    item.textContent = `Import #${match.id} · ${auditMatchSummary(match)}`;
+    return item;
+  }));
+  const replaceable = matches.filter(match => match.replaceable);
+  target.replaceChildren(...replaceable.map(match => new Option(`#${match.id} · ${match.match_code}`, match.id)));
+  target.disabled = !replaceable.length;
+  document.getElementById("duplicate-audit-replace").disabled = !replaceable.length;
+  dialog.returnValue = "discard";
+  return new Promise(resolve => {
+    dialog.addEventListener("close", () => {
+      if (dialog.returnValue === "replace" && target.value) {
+        const original = replaceable.find(match => match.id === Number(target.value));
+        resolve({ replace_match_id: original.id, ...(original.file_hash ? { replace_file_hash: original.file_hash } : {}) });
+      }
+      else if (dialog.returnValue === "new") resolve({ create_new: true });
+      else resolve(null);
+    }, { once: true });
+    dialog.showModal();
+  });
+}
+
+async function openTeamManagement() {
+  document.getElementById("admin-teams-modal").classList.add("open");
+  const status = document.getElementById("admin-teams-status");
+  status.textContent = "Caricamento squadre…";
+  try {
+    await refreshTeamOptions();
+    status.textContent = "";
+  } catch (error) {
+    status.textContent = error.message;
+  }
+}
+
+async function refreshTeamOptions(selectedId = "") {
+  const res = await authFetch("/api/admin/teams");
+  if (!res.ok) throw new Error(await parseErrorResponse(res, "Impossibile caricare le squadre"));
+  const teams = await res.json();
+  const select = document.getElementById("admin-team-select");
+  select.replaceChildren(new Option("Nuova squadra", ""));
+  for (const team of teams) {
+    const option = new Option(`${team.name} (${team.code})`, team.id);
+    option.dataset.code = team.code;
+    option.dataset.name = team.name;
+    option.dataset.rosterCode = team.roster_code || "";
+    select.append(option);
+  }
+  document.getElementById("admin-team-count").textContent = teams.length === 1
+    ? "1 squadra censita" : `${teams.length} squadre censite`;
+  select.value = selectedId;
+  fillTeamSettings();
+  if (document.getElementById("view-admin-rosters").style.display === "flex") await renderAdminRosters();
+}
+
+function fillTeamSettings() {
+  const select = document.getElementById("admin-team-select");
+  const selected = select.selectedOptions[0]?.dataset || {};
+  const code = document.getElementById("admin-team-code");
+  code.value = selected.code || "";
+  code.readOnly = Boolean(select.value);
+  document.getElementById("admin-team-name").value = selected.name || "";
+  document.getElementById("admin-team-roster-code").value = selected.rosterCode || "";
+}
+
+async function saveTeamSettings(event) {
+  event.preventDefault();
+  const status = document.getElementById("admin-teams-status");
+  const teamId = document.getElementById("admin-team-select").value;
+  const payload = {
+    code: document.getElementById("admin-team-code").value.trim(),
+    name: document.getElementById("admin-team-name").value.trim(),
+    roster_code: document.getElementById("admin-team-roster-code").value.trim() || null
+  };
+  const button = event.submitter;
+  button.disabled = true;
+  try {
+    const res = await authFetch(`/api/admin/teams${teamId ? `/${teamId}` : ""}`, {
+      method: teamId ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(await parseErrorResponse(res, "Impossibile salvare la squadra"));
+    await refreshTeamOptions(teamId);
+    status.textContent = "Squadra salvata.";
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function importTeamCatalog(event) {
+  if (!confirm("Importare il catalogo B1F, girone B, stagione 2026/27?")) return;
+  const button = event.currentTarget;
+  const status = document.getElementById("admin-teams-status");
+  button.disabled = true;
+  try {
+    const res = await authFetch("/api/admin/teams/import-b1f-b", { method: "POST" });
+    if (!res.ok) throw new Error(await parseErrorResponse(res, "Importazione del catalogo non riuscita"));
+    const data = await res.json();
+    await refreshTeamOptions();
+    status.textContent = !data.added && !data.linked && !data.conflicts.length
+      ? "Catalogo già importato. Scegli una squadra dal menu per consultarla."
+      : [`Squadre aggiunte: ${data.added}. Codici roster completati: ${data.linked}.`, ...data.conflicts].join(" ");
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function importA3FTeamCatalog(event) {
+  if (!confirm("Importare il catalogo A3F, girone B, stagione 2026/27?")) return;
+  const button = event.currentTarget;
+  const status = document.getElementById("admin-teams-status");
+  button.disabled = true;
+  try {
+    const res = await authFetch("/api/admin/teams/import-a3f-b", { method: "POST" });
+    if (!res.ok) throw new Error(await parseErrorResponse(res, "Importazione del catalogo A3F non riuscita"));
+    const data = await res.json();
+    await refreshTeamOptions();
+    status.textContent = !data.added && !data.linked && !data.conflicts.length
+      ? "Catalogo A3F già importato. I codici squadra DVW provvisori saranno aggiornati al primo scout riconosciuto per nome."
+      : [`Squadre aggiunte: ${data.added}. Codici roster completati: ${data.linked}. I codici DVW provvisori saranno aggiornati al primo scout riconosciuto per nome.`, ...data.conflicts].join(" ");
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function syncRosters(teamCode, download = false) {
+  if (btnSyncRosters.disabled) return;
+  const status = document.getElementById("roster-status");
+  const buttons = [btnSyncRosters, document.getElementById("btn-import-local-rosters"), ...document.querySelectorAll(".btn-roster-action")];
+  buttons.forEach(button => { button.disabled = true; });
+  status.textContent = download ? "Download e sincronizzazione in corso…" : "Importazione in corso…";
   try {
     const res = await authFetch("/api/rosters/sync", {
       method: "POST",
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ team_code: teamCode, download })
     });
     const data = await res.json();
-    alert("Sincronizzazione completata con successo!");
+    if (!res.ok) throw new Error(data.detail || "Importazione non riuscita");
+    const results = data.results.map(entry => Array.isArray(entry) ? entry[1] : entry);
+    const errors = results.filter(result => result.status !== "SUCCESS").map(result => result.message);
+    const backups = results.filter(result => result.backup_created).length;
+    status.textContent = results.length
+      ? [`${results.length - errors.length} di ${results.length} roster sincronizzati.`, ...(backups ? [`Backup creati: ${backups}.`] : []), ...errors].join(" ")
+      : "Nessuna squadra con codice roster configurato.";
+    await renderAdminRosters();
   } catch (err) {
-    alert(`Errore sincronizzazione roster: ${err.message}`);
+    status.textContent = `Errore importazione roster: ${err.message}`;
   } finally {
-    btnSyncRosters.disabled = false;
-    btnSyncRosters.textContent = "🔄 Roster";
+    buttons.forEach(button => { button.disabled = false; });
+  }
+}
+
+async function renderAdminRosters() {
+  const tbody = document.getElementById("admin-rosters-tbody");
+  const showMessage = message => {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">${escapeHtml(message)}</td></tr>`;
+  };
+  showMessage("Caricamento roster…");
+  try {
+    const res = await authFetch("/api/admin/rosters");
+    if (!res.ok) throw new Error("Impossibile caricare i roster.");
+    const teams = await res.json();
+    if (!teams.length) {
+      showMessage("Nessuna squadra presente nel database.");
+      return;
+    }
+    tbody.replaceChildren();
+    for (const team of teams) {
+      const row = tbody.insertRow();
+      for (const value of [team.name, team.code, team.roster_code || "Codice roster mancante", team.active_players]) {
+        row.insertCell().textContent = value;
+      }
+      const actions = row.insertCell();
+      actions.innerHTML = '<button type="button" class="btn btn-secondary btn-sm" aria-expanded="false">Dettaglio</button>';
+      actions.firstElementChild.addEventListener("click", event => toggleRosterDetail(row, team.id, event.currentTarget));
+      if (team.roster_code) {
+        for (const [label, download] of [["Importa .sq", false], ["Riscarica e sincronizza", true]]) {
+          const button = document.createElement("button");
+          button.className = "btn btn-secondary btn-sm btn-roster-action";
+          button.textContent = label;
+          button.addEventListener("click", () => syncRosters(team.code, download));
+          actions.append(" ", button);
+        }
+      }
+      const remove = document.createElement("button");
+      remove.className = "btn btn-danger btn-sm btn-roster-action";
+      remove.textContent = "Disattiva roster";
+      remove.addEventListener("click", () => disableRoster(team));
+      actions.append(" ", remove);
+    }
+  } catch (err) {
+    showMessage(err.message);
+  }
+}
+
+async function disableRoster(team) {
+  if (btnSyncRosters.disabled || !confirm(`Disattivare il roster di ${team.name}? Le gare resteranno visibili.`)) return;
+  const status = document.getElementById("roster-status");
+  try {
+    const res = await authFetch(`/api/admin/rosters/${team.id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(await parseErrorResponse(res, "Impossibile disattivare il roster"));
+    status.textContent = `Roster di ${team.name} disattivato.`;
+    await renderAdminRosters();
+  } catch (err) {
+    status.textContent = err.message;
+  }
+}
+
+async function toggleRosterDetail(row, teamId, button) {
+  if (button.getAttribute("aria-expanded") === "true") {
+    row.nextElementSibling.remove();
+    button.setAttribute("aria-expanded", "false");
+    return;
+  }
+  const detail = document.createElement("tr");
+  row.after(detail);
+  const cell = detail.insertCell();
+  cell.colSpan = row.cells.length;
+  cell.textContent = "Caricamento atlete…";
+  button.setAttribute("aria-expanded", "true");
+  try {
+    const res = await authFetch(`/api/admin/rosters/${teamId}`);
+    if (!res.ok) throw new Error("Impossibile caricare il dettaglio del roster.");
+    const players = await res.json();
+    if (!players.length) {
+      cell.textContent = "Nessuna atleta registrata per questa squadra.";
+      return;
+    }
+    cell.innerHTML = `<table class="simple-table">
+      <thead><tr><th>Maglia</th><th>Atleta</th><th>Ruolo</th><th>Dal</th><th>Al</th></tr></thead>
+      <tbody>${players.map(player => `<tr>${[
+        player.shirt_number, `${player.last_name} ${player.first_name}`, player.role,
+        player.valid_from, player.valid_to || "Attiva"
+      ].map(value => `<td>${escapeHtml(String(value ?? "—"))}</td>`).join("")}</tr>`).join("")}</tbody>
+    </table>`;
+  } catch (err) {
+    cell.textContent = err.message;
   }
 }
 
@@ -912,7 +1246,8 @@ async function loadAdminUsers() {
     usersTbody.innerHTML = "";
     users.forEach(u => {
       const tr = document.createElement("tr");
-      const teamBadges = (u.teams || []).map(t => `<small style="background:#26334d; padding:2px 4px; border-radius:3px;">${t.code}</small>`).join(" ") || "<em>Nessuna</em>";
+      const teamBadges = u.role === "ADMIN" ? "Tutte" :
+        (u.teams || []).map(t => `<small style="background:#26334d; padding:2px 4px; border-radius:3px;">${escapeHtml(t.code)}</small>`).join(" ") || "<em>Nessuna</em>";
       tr.innerHTML = `
         <td><strong>${u.username}</strong></td>
         <td><span class="team-chip ${u.role === 'ADMIN' ? 'home' : 'away'}">${u.role}</span></td>
@@ -1029,7 +1364,46 @@ async function handleSaveUser(e) {
 // --- ADMIN RULES MANAGEMENT ---
 async function openAdminRulesModal() {
   adminRulesModal.classList.add("open");
-  await loadAdminRules();
+  await Promise.all([loadAdminRules(), loadSubstitutionSettings()]);
+}
+
+async function loadSubstitutionSettings() {
+  const input = document.getElementById("max-substitutions-per-set");
+  const button = input.form.querySelector("button");
+  const status = document.getElementById("substitution-settings-status");
+  input.disabled = button.disabled = true;
+  status.textContent = "Caricamento limite…";
+  try {
+    const response = await authFetch("/api/admin/rules/substitutions");
+    if (!response.ok) throw new Error(await parseErrorResponse(response, "Impossibile caricare il limite"));
+    input.value = (await response.json()).max_substitutions_per_set;
+    input.disabled = button.disabled = false;
+    status.textContent = "";
+  } catch (error) {
+    status.textContent = error.message;
+  }
+}
+
+async function saveSubstitutionSettings(event) {
+  event.preventDefault();
+  const input = document.getElementById("max-substitutions-per-set");
+  const button = event.currentTarget.querySelector("button");
+  const status = document.getElementById("substitution-settings-status");
+  button.disabled = true;
+  try {
+    const response = await authFetch("/api/admin/rules/substitutions", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ max_substitutions_per_set: input.valueAsNumber })
+    });
+    if (!response.ok) throw new Error(await parseErrorResponse(response, "Impossibile salvare il limite"));
+    input.value = (await response.json()).max_substitutions_per_set;
+    status.textContent = "Limite salvato. Usa Rivalida Gare per aggiornare le anomalie delle gare già caricate.";
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 }
 
 async function loadAdminRules() {
@@ -1124,7 +1498,8 @@ async function handleRevalidateMatches() {
   btnRevalidateMatches.disabled = true;
   btnRevalidateMatches.textContent = "⏳ Rivalutazione...";
   try {
-    const res = await authFetch("/api/admin/rules/revalidate", { method: "POST" });
+    const res = await requestRevalidation("/api/admin/rules/revalidate");
+    if (!res) return;
     if (!res.ok) {
       throw new Error(await parseErrorResponse(res, "Errore durante la rivalutazione"));
     }
@@ -1171,19 +1546,13 @@ async function loadAdminLogins() {
 
 // --- VIEW SWITCHING (SPA) ---
 function switchView(viewName) {
-  const viewDashboard = document.getElementById("view-dashboard");
-  const viewAdminMatches = document.getElementById("view-admin-matches");
-
-  if (viewName === "admin-matches") {
-    if (viewDashboard) viewDashboard.style.display = "none";
-    if (viewAdminMatches) {
-      viewAdminMatches.style.display = "flex";
-      renderAdminMatchesFullTable();
-    }
-  } else {
-    if (viewAdminMatches) viewAdminMatches.style.display = "none";
-    if (viewDashboard) viewDashboard.style.display = "flex";
+  const views = ["dashboard", "admin-matches", "admin-rosters"];
+  const selected = views.includes(viewName) ? viewName : "dashboard";
+  for (const view of views) {
+    document.getElementById(`view-${view}`).style.display = view === selected ? "flex" : "none";
   }
+  if (selected === "admin-matches") renderAdminMatchesFullTable();
+  if (selected === "admin-rosters") renderAdminRosters();
 }
 window.switchView = switchView;
 
@@ -1233,6 +1602,16 @@ async function renderAdminMatchesFullTable() {
   }
 }
 
+async function requestRevalidation(url) {
+  const response = await authFetch(url, { method: "POST" });
+  if (response.status !== 409) return response;
+  const data = await response.clone().json();
+  if (data.detail?.code !== "inactive_rosters") return response;
+  const names = data.detail.teams.map(team => team.name).join(", ");
+  if (!confirm(`Roster disattivati: ${names}.\n\nVuoi riabilitarli e continuare la rivalidazione?`)) return null;
+  return authFetch(`${url}?reactivate_rosters=true`, { method: "POST" });
+}
+
 async function revalidateMatchFromAdmin(matchId) {
   const btn = document.getElementById(`btn-reval-${matchId}`);
   if (btn) {
@@ -1240,7 +1619,8 @@ async function revalidateMatchFromAdmin(matchId) {
     btn.textContent = "⏳...";
   }
   try {
-    const res = await authFetch(`/api/admin/matches/${matchId}/revalidate`, { method: "POST" });
+    const res = await requestRevalidation(`/api/admin/matches/${matchId}/revalidate`);
+    if (!res) return;
     if (!res.ok) {
       throw new Error(await parseErrorResponse(res, "Errore durante la validazione della partita"));
     }
@@ -1271,7 +1651,8 @@ async function handleAdminRevalidateAllMatches() {
     btn.textContent = "⏳ Validazione in corso...";
   }
   try {
-    const res = await authFetch("/api/admin/rules/revalidate", { method: "POST" });
+    const res = await requestRevalidation("/api/admin/rules/revalidate");
+    if (!res) return;
     if (!res.ok) {
       throw new Error(await parseErrorResponse(res, "Errore durante la rivalutazione massiva"));
     }

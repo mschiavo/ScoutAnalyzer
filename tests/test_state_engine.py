@@ -1,4 +1,5 @@
 import sqlite3
+import json
 from database.setup_db import create_database
 from src.ingestion_manager import IngestionManager
 from src.state_engine import MatchStateEngine
@@ -73,10 +74,10 @@ def test_max_substitutions_rule(tmp_path):
 
     ingester = IngestionManager()
     ingester.db_path = db_file
-    # Generiamo 7 sostituzioni per la squadra di casa nel set 1
+    # Generiamo 9 sostituzioni per la squadra di casa nel set 1.
     events = []
     idx = 1
-    for i in range(1, 8):
+    for i in range(1, 10):
         events.append({
             "event_index": idx, "set_number": 1, "team_code": "*", "shirt_number": None,
             "skill": None, "skill_type": None, "evaluation": None, "extended_code": f"*c0{i}:1{i}",
@@ -93,7 +94,9 @@ def test_max_substitutions_rule(tmp_path):
     }
     res = ingester.ingest_dvw(mock_data)
 
-    engine = MatchStateEngine(match_id=res["match_id"])
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+    engine = MatchStateEngine(match_id=res["match_id"], config_path=str(config_path))
     engine.db_path = db_file
     status = engine.process_match()
     assert status["issues_found"] >= 1
@@ -101,9 +104,17 @@ def test_max_substitutions_rule(tmp_path):
     conn = sqlite3.connect(db_file)
     cur = conn.cursor()
     cur.execute("SELECT error_summary FROM validation_logs WHERE match_id = ?", (res["match_id"],))
-    errors = [r[0] for r in cur.fetchall()]
+    errors = [r[0] for r in cur.fetchall() if "sostituzion" in r[0].lower()]
     conn.close()
-    assert any("sostituzion" in err.lower() for err in errors)
+    assert len(errors) == 1 and "8 sostituzioni" in errors[0] and "effettuate: 9" in errors[0]
+
+    config_path.write_text(json.dumps({"validation": {"max_substitutions_per_set": 9}}), encoding="utf-8")
+    engine = MatchStateEngine(match_id=res["match_id"], config_path=str(config_path))
+    engine.db_path = db_file
+    engine.process_match()
+    with sqlite3.connect(db_file) as conn:
+        assert conn.execute("SELECT error_note FROM events WHERE match_id = ? AND event_index = 9",
+                            (res["match_id"],)).fetchone()[0] is None
 
 def test_set_score_margin_rule(tmp_path):
     db_file = str(tmp_path / "test.db")

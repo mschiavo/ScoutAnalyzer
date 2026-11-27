@@ -666,6 +666,28 @@ select:focus, input[type="text"]:focus, input[type="password"]:focus, input[type
   box-sizing: border-box;
 }
 
+#duplicate-audit-dialog:not([open]) {
+  display: none;
+}
+
+#duplicate-audit-dialog {
+  color: inherit;
+  padding: 0;
+  overflow: auto;
+}
+
+#duplicate-audit-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+#duplicate-audit-dialog .modal-footer {
+  flex-wrap: wrap;
+}
+
+#duplicate-audit-existing {
+  overflow-wrap: anywhere;
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
@@ -787,6 +809,44 @@ select:focus, input[type="text"]:focus, input[type="password"]:focus, input[type
 
 .form-group input, .form-group select {
   width: 100%;
+}
+
+#admin-team-form {
+  margin-top: 20px;
+}
+
+#admin-team-form input,
+#admin-team-form select {
+  min-height: 38px;
+  font-family: inherit;
+}
+
+#admin-team-code[readonly] {
+  background-color: var(--bg-card);
+  color: var(--text-muted);
+}
+
+#admin-team-count,
+#admin-teams-status {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-muted);
+}
+
+.substitution-settings-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.substitution-settings-controls input {
+  width: 7rem;
+}
+
+#substitution-settings-status {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
 }
 
 .btn-block {
